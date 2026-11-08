@@ -89,7 +89,7 @@ export function dashboard(el) {
 
   function drawData() {
     const d = store.data, k = d.kpis;
-    const account = d.browser?.session?.account || 'Instagram User';
+    const account = d.browser?.session?.account || d.profile?.username || 'Instagram User';
     const heroBadge = $('#hero-user-badge span', el);
     if (heroBadge) heroBadge.textContent = `@${account}`;
 
@@ -347,8 +347,12 @@ export const tableView = cfg => el => {
           <td><a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a></td>
           <td>${esc(r.relationship)}</td><td class="muted">${esc(r.accountStatus)}</td><td>${badge(r.status)}</td>
           <td class="muted">${fmtDate(r.lastAttemptAt)}</td>
-          <td><a class="btn sm ghost" href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">Open</a>
-              ${r.reason || r.screenshot ? `<button class="btn sm ghost" data-i="${esc(r.username)}">Inspect</button>` : ''}</td>
+          <td>
+            ${['Mutual', 'Not following back', 'Following'].includes(r.relationship) ? `<button class="btn sm danger-ghost" data-unfollow="${esc(r.username)}" ${['UNFOLLOWED', 'ALREADY_UNFOLLOWED'].includes(r.status) ? 'disabled' : ''}>Unfollow</button>` : ''}
+            ${r.relationship === 'Follows you only' ? `<button class="btn sm primary-ghost" data-follow="${esc(r.username)}">Follow</button>` : ''}
+            <a class="btn sm ghost" href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">Open</a>
+            ${r.reason || r.screenshot ? `<button class="btn sm ghost" data-i="${esc(r.username)}">Inspect</button>` : ''}
+          </td>
         `}
       </tr>`).join('');
     }
@@ -383,6 +387,33 @@ export const tableView = cfg => el => {
       const u = t.dataset.c;
       if (!await confirmModal({ title: `Cancel the request to @${u}?`, danger: true, confirmText: 'Confirm Cancellation', body: '<p>The request is re-checked on Instagram first. If it was accepted meanwhile, nothing is changed.</p>' })) return;
       try { await post('/api/run/start', { mode: 'cancel', usernames: [u], confirm: true }); toast(`Cancelling @${u}`, 'ok'); await hooks.refresh(); } catch (e) { toast(e.message, 'err'); }
+      return;
+    }
+    if (t.dataset.unfollow) {
+      const u = t.dataset.unfollow;
+      if (!await confirmModal({
+        title: `Unfollow @${u}?`,
+        danger: true,
+        confirmText: 'Confirm Unfollow',
+        body: `<p>The account <b>@${esc(u)}</b> will be verified on Instagram and safely unfollowed.</p>`
+      })) return;
+      try {
+        await post('/api/run/start', { mode: 'unfollow', usernames: [u], confirm: true });
+        toast(`Unfollowing @${u}`, 'ok');
+        await hooks.refresh();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+      return;
+    }
+    if (t.dataset.follow) {
+      const u = t.dataset.follow;
+      try {
+        await post('/api/tabs/open', { username: u });
+        toast(`Opened @${u} in Instagram browser`, 'ok');
+      } catch (e) {
+        window.open(`https://www.instagram.com/${encodeURIComponent(u)}/`, '_blank');
+      }
       return;
     }
     const s = t.dataset.s; if (!s) return;
@@ -611,13 +642,20 @@ export function intelligenceView(el) {
     <div class="grid kpis" id="intel-kpis" style="margin-bottom:20px"></div>
     <div class="grid two">
       <div class="card">
-        <h2>Audience Conversion & Ratios</h2>
+        <h2>Audience Conversion &amp; Ratios</h2>
         <div id="intel-ratios" style="line-height:2"></div>
       </div>
       <div class="card">
         <h2>Outgoing Pending Requests by Year</h2>
         <div id="intel-years"></div>
       </div>
+    </div>
+    <div class="card" style="margin-top:18px" id="intel-post-analytics">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2>Post &amp; Engagement Intelligence</h2>
+        <a class="btn sm" href="#/archive">Open Post Archive &rarr;</a>
+      </div>
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px" id="intel-post-kpis"></div>
     </div>
     <div class="card" style="margin-top:18px">
       <h2>Strategic Recommendations</h2>
@@ -659,6 +697,17 @@ export function intelligenceView(el) {
           </div>
         ` : '<p class="muted">No outgoing pending requests.</p>';
       }
+      const pk = $('#intel-post-kpis', el);
+      if (pk) {
+        const pa = store.data.postArchive || {};
+        pk.innerHTML = `
+          <div class="card kpi" style="margin:0"><div class="label">Synced Posts</div><div class="value">${fmtNum(pa.total || 0)}</div></div>
+          <div class="card kpi" style="margin:0"><div class="label">Total Likes</div><div class="value" style="color:#FF5E7E">${fmtNum(pa.totalLikes || 0)}</div></div>
+          <div class="card kpi" style="margin:0"><div class="label">Total Comments</div><div class="value" style="color:#4DAFFF">${fmtNum(pa.totalComments || 0)}</div></div>
+          <div class="card kpi" style="margin:0"><div class="label">Avg Likes / Post</div><div class="value">${fmtNum(pa.avgLikes || 0)}</div></div>
+          <div class="card kpi" style="margin:0"><div class="label">Avg Comments / Post</div><div class="value">${fmtNum(pa.avgComments || 0)}</div></div>
+        `;
+      }
       const recs = $('#intel-recs', el);
       if (recs) {
         recs.innerHTML = d.recommendations.map(r => `<li>${esc(r)}</li>`).join('');
@@ -679,20 +728,50 @@ export function analyticsView(el) {
 
 /* ---------------------------------------------------------------- Post Archive Manager */
 export function postArchiveView(el) {
-  el.innerHTML = `<h1>Post Archive Manager</h1><p class="sub">Safely inspect and archive published posts on your Instagram profile. Deletion is NEVER used as an archive fallback.</p>
+  el.innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <div>
+        <h1>Post Archive &amp; Analytics</h1>
+        <p class="sub">Safely inspect, analyze engagement (likes &amp; comments), and archive published posts from your verified Instagram profile.</p>
+      </div>
+      <div>
+        <button class="btn primary" id="sync-posts-btn">${icon('sparkles', 15)} Sync from Instagram</button>
+      </div>
+    </div>
+
     <div class="grid kpis" id="arch-kpis">
       <div class="card kpi"><div class="label">Total Posts</div><div class="value" id="k-p-total">0</div></div>
       <div class="card kpi"><div class="label">Active Posts</div><div class="value" id="k-p-active">0</div></div>
       <div class="card kpi"><div class="label">Archived Posts</div><div class="value" id="k-p-arch">0</div></div>
-      <div class="card kpi"><div class="label">Queued Archive</div><div class="value" id="k-p-queued">0</div></div>
+      <div class="card kpi"><div class="label">Total Likes</div><div class="value" id="k-p-likes" style="color:#FF5E7E">0</div></div>
+      <div class="card kpi"><div class="label">Total Comments</div><div class="value" id="k-p-comments" style="color:#4DAFFF">0</div></div>
+      <div class="card kpi"><div class="label">Avg Likes / Post</div><div class="value" id="k-p-avg">0</div></div>
     </div>
-    <div class="tablewrap" style="margin-top:18px">
+
+    <div class="toolbar" style="margin-top:16px">
+      <input type="search" id="p-q" placeholder="Search caption or post ID..." style="max-width:280px" aria-label="Search posts">
+      <select id="p-st" aria-label="Filter post status">
+        <option value="">All statuses</option>
+        <option value="ACTIVE">Active only</option>
+        <option value="ARCHIVED">Archived only</option>
+      </select>
+      <select id="p-sort" aria-label="Sort posts">
+        <option value="postedAt_desc">Newest First</option>
+        <option value="likes_desc">Most Likes ❤️</option>
+        <option value="comments_desc">Most Comments 💬</option>
+        <option value="postedAt_asc">Oldest First</option>
+      </select>
+    </div>
+
+    <div class="tablewrap" style="margin-top:14px">
       <table>
         <thead>
           <tr>
-            <th>Post ID</th>
+            <th style="width:54px">Media</th>
+            <th>Post Link</th>
+            <th>Engagement</th>
             <th>Caption</th>
-            <th>Media Type</th>
+            <th>Type</th>
             <th>Status</th>
             <th>Action</th>
           </tr>
@@ -701,33 +780,74 @@ export function postArchiveView(el) {
       </table>
     </div>`;
 
+  let filter = { q: '', status: '', sort: 'postedAt', dir: 'desc' };
+
   const loadPosts = async () => {
     try {
-      const res = await api('/api/posts');
-      const summary = store.data.postArchive || {};
-      $('#k-p-total', el).textContent = fmtNum(summary.total || 0);
-      $('#k-p-active', el).textContent = fmtNum(summary.active || 0);
-      $('#k-p-arch', el).textContent = fmtNum(summary.archived || 0);
-      $('#k-p-queued', el).textContent = fmtNum(summary.queued || 0);
+      const res = await api(`/api/posts?${new URLSearchParams(filter)}`);
+      const s = res.summary || store.data.postArchive || {};
+      $('#k-p-total', el).textContent = fmtNum(s.total || 0);
+      $('#k-p-active', el).textContent = fmtNum(s.active || 0);
+      $('#k-p-arch', el).textContent = fmtNum(s.archived || 0);
+      $('#k-p-likes', el).textContent = fmtNum(s.totalLikes || 0);
+      $('#k-p-comments', el).textContent = fmtNum(s.totalComments || 0);
+      $('#k-p-avg', el).textContent = fmtNum(s.avgLikes || 0);
 
       const tb = $('#arch-table', el);
       if (tb) {
         tb.innerHTML = res.posts.length ? res.posts.map(p => `
           <tr>
-            <td><a href="${esc(p.url)}" target="_blank">#${esc(p.id)}</a></td>
-            <td>${esc(p.caption || '—')}</td>
-            <td><span class="chip">${esc(p.mediaType)}</span></td>
+            <td>
+              ${p.thumbnailUrl ? `<img class="post-thumb" src="${esc(p.thumbnailUrl)}" alt="thumb" loading="lazy" onerror="this.style.display='none'">` : '<div class="post-thumb" style="display:grid;place-items:center;color:var(--muted)">📷</div>'}
+            </td>
+            <td><a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer"><b>#${esc(p.id)}</b></a></td>
+            <td>
+              <div class="row" style="gap:6px">
+                <span class="post-stat-pill likes" title="Total Likes">❤️ ${fmtNum(p.likeCount || 0)}</span>
+                <span class="post-stat-pill comments" title="Total Comments">💬 ${fmtNum(p.commentCount || 0)}</span>
+              </div>
+            </td>
+            <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.caption || '')}">${esc(p.caption || '—')}</td>
+            <td><span class="chip">${esc(p.mediaType || 'IMAGE')}</span></td>
             <td>${badge(p.status)}</td>
             <td>
-              ${p.status === 'ACTIVE' ? `<button class="btn sm" data-arch="${esc(p.id)}">Archive Post</button>` : ''}
+              ${p.status === 'ACTIVE' ? `<button class="btn sm danger-ghost" data-arch="${esc(p.id)}">Archive</button>` : ''}
+              <a class="btn sm ghost" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">View</a>
             </td>
           </tr>
-        `).join('') : '<tr><td colspan="5" class="muted">No posts found in local cache. Import your media export or inspect posts in browser.</td></tr>';
+        `).join('') : `<tr><td colspan="7"><div class="empty"><h2>No posts found</h2>Click <b>Sync from Instagram</b> above to sync your profile posts and engagement metrics.</div></td></tr>`;
       }
     } catch (e) {
       toast(e.message, 'err');
     }
   };
+
+  $('#p-q', el).addEventListener('input', debounce(e => { filter.q = e.target.value; loadPosts(); }, 250));
+  $('#p-st', el).addEventListener('change', e => { filter.status = e.target.value; loadPosts(); });
+  $('#p-sort', el).addEventListener('change', e => {
+    const [s, d] = e.target.value.split('_');
+    filter.sort = s; filter.dir = d || 'desc';
+    loadPosts();
+  });
+
+  $('#sync-posts-btn', el).addEventListener('click', async () => {
+    const btn = $('#sync-posts-btn', el);
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = 'Syncing...';
+    try {
+      toast('Connecting to Instagram browser and syncing posts...', 'info');
+      const res = await post('/api/profile/sync');
+      toast(`Profile synced! Ingested ${res.postsCount || 0} posts with likes and comments.`, 'ok');
+      await hooks.refresh();
+      loadPosts();
+    } catch (e) {
+      toast(e.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  });
 
   el.addEventListener('click', async e => {
     if (e.target.dataset.arch) {

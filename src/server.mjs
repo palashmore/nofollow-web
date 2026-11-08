@@ -20,6 +20,7 @@ import { CentralJobOrchestrator, JOB_TYPES, JOB_STATUS } from './automation/cent
 import { PostArchiveService } from './services/post-archive-service.mjs';
 import { StoriesHighlightsService } from './services/stories-highlights-service.mjs';
 import { FollowersIntelligenceService } from './services/followers-intelligence-service.mjs';
+import { ProfileSyncService } from './services/profile-sync-service.mjs';
 
 const PORT = Number(process.env.PORT) || 4173;
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -50,6 +51,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     logger
   });
   const postArchive = new PostArchiveService(path.join(dataDir, 'post-archive.json'));
+  const profileSync = new ProfileSyncService({ session, postArchive, dataDir, logger });
   const storiesHighlights = new StoriesHighlightsService(path.join(dataDir, 'stories-highlights.json'));
   const intelligence = new FollowersIntelligenceService(accounts, checkpoints);
   let lastJob = 'unfollow';
@@ -77,6 +79,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     queue: orchestrator.getSnapshot(),
     pairing: pairing.getStatus(),
     intelligence: intelligence.getIntelligence(),
+    profile: profileSync.getProfile(),
     postArchive: postArchive.summary(),
     storiesHighlights: storiesHighlights.summary()
   });
@@ -159,6 +162,16 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
       }
       case 'GET /api/audit': return json(res, 200, orchestrator.getAuditHistory(Number(q.limit || 100)));
       case 'GET /api/intelligence': return json(res, 200, intelligence.getIntelligence());
+      case 'GET /api/profile': return json(res, 200, profileSync.getProfile());
+      case 'POST /api/profile/sync': {
+        try {
+          const synced = await profileSync.syncProfile();
+          return json(res, 200, synced);
+        } catch (e) {
+          logger.error(`Profile sync error: ${e.message}`, { error: e.message });
+          return json(res, 400, { error: e.message });
+        }
+      }
       case 'GET /api/posts': return json(res, 200, postArchive.getPosts(q));
       case 'POST /api/posts/archive': {
         const b = JSON.parse(await body(req));
@@ -326,7 +339,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     }
   });
 
-  return { server, engines, engine: engines.unfollow, checkpoints, checkpoint: checkpoints.unfollow, accounts, logger, session, pairing, orchestrator, postArchive, storiesHighlights, intelligence, getSettings: () => settings };
+  return { server, engines, engine: engines.unfollow, checkpoints, checkpoint: checkpoints.unfollow, accounts, logger, session, pairing, orchestrator, postArchive, storiesHighlights, intelligence, profileSync, getSettings: () => settings };
 }
 
 const openUrl = url => { if (!process.env.NO_OPEN) exec(`start "" "${url}"`); };

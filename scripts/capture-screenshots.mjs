@@ -16,7 +16,11 @@ const resolutions = [
 const pages = [
   { name: 'dashboard', path: '#/dashboard' },
   { name: 'non-followers', path: '#/non-followers' },
+  { name: 'mutual-followers', path: '#/mutual-followers' },
+  { name: 'following', path: '#/following' },
+  { name: 'followers', path: '#/followers' },
   { name: 'pending-requests', path: '#/pending-requests' },
+  { name: 'archive', path: '#/archive' },
   { name: 'queue', path: '#/queue' },
   { name: 'analytics', path: '#/analytics' },
   { name: 'settings', path: '#/settings' }

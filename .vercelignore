@@ -1,0 +1,23 @@
+# Vercel Deployment Ignore File
+# Only static frontend assets (index.html, assets/, pages/) should be deployed to Vercel CDN.
+# The local agent, Node backend, Playwright dependencies, and local data stay strictly on the Windows machine.
+
+node_modules/
+src/
+tests/
+scripts/
+profile/
+data/
+logs/
+backups/
+unfollow.mjs
+run.bat
+package.json
+package-lock.json
+*.mjs
+*.ps1
+*.bat
+*.vbs
+*.lock
+*.tmp
+user_prompt_full.txt

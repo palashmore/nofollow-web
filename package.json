@@ -1,0 +1,17 @@
+{
+  "name": "nofollowweb",
+  "version": "2.0.0",
+  "description": "Find Instagram accounts that do not follow you back and unfollow them under your control.",
+  "scripts": {
+    "start": "node unfollow.mjs",
+    "test": "node --test --test-concurrency=1 \"tests/*.test.mjs\""
+  },
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "^1.65.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

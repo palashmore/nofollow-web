@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pending Follow Requests - NoFollow Web</title>
+<link rel="stylesheet" href="/assets/css/variables.css">
+<link rel="stylesheet" href="/assets/css/app.css">
+</head>
+<body>
+<!--
+  PENDING FOLLOW REQUESTS - PREMIUM DASHBOARD & CANCELLATION INTERFACE
+  This component provides complete visibility and oldest-first cancellation control
+  over Instagram outgoing pending follow requests parsed from pending_follow_requests.html.
+-->
+<div class="pending-requests-view" id="pending-requests-view">
+  <header class="view-header">
+    <h1>Pending follow requests</h1>
+    <p class="sub">Outgoing follow requests you sent to private accounts, ordered from oldest to newest.</p>
+  </header>
+
+  <!-- Section 12: 10 Dashboard KPI Cards -->
+  <section class="grid kpis" id="rq-kpis" aria-label="Pending Request Metrics">
+    <div class="card kpi"><div class="label">Total pending requests</div><div class="value" id="k-imported">0</div></div>
+    <div class="card kpi"><div class="label">Eligible pending</div><div class="value" id="k-eligible">0</div></div>
+    <div class="card kpi"><div class="label">Selected</div><div class="value" id="k-sel">0</div></div>
+    <div class="card kpi"><div class="label">Successfully cancelled</div><div class="value" id="k-done">0</div></div>
+    <div class="card kpi"><div class="label">Already cancelled</div><div class="value" id="k-already">0</div></div>
+    <div class="card kpi"><div class="label">Accepted</div><div class="value" id="k-acc">0</div></div>
+    <div class="card kpi"><div class="label">Profile unavailable</div><div class="value" id="k-unav">0</div></div>
+    <div class="card kpi"><div class="label">Failed</div><div class="value" id="k-fail">0</div></div>
+    <div class="card kpi"><div class="label">Needs review</div><div class="value" id="k-review">0</div></div>
+    <div class="card kpi"><div class="label">Remaining</div><div class="value" id="k-rem">0</div></div>
+    <div class="card kpi"><div class="label">Received requests (info)</div><div class="value" id="k-received">0</div></div>
+  </section>
+
+  <!-- Section 10: Oldest-First Cancellation Controls Engine Panel -->
+  <section class="card" id="cancellation-engine" aria-label="Cancellation Controls">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Cancellation Engine (Oldest First)</h2>
+      <span class="chip" id="engine-status"><span class="dot"></span>IDLE</span>
+    </div>
+    <div class="progress" style="margin:14px 0 8px"><i id="engine-progress" style="width:0%"></i></div>
+    <div class="sub" id="engine-current-activity">Select outgoing requests below, or press Cancel All Pending.</div>
+
+    <!-- Section 10 Actions -->
+    <div class="row controls-row" style="margin-top:16px;flex-wrap:wrap;gap:8px">
+      <button class="btn primary" id="btn-cancel-selected" data-a="start">Cancel Selected</button>
+      <button class="btn" id="btn-cancel-all" data-a="all">Cancel All Pending</button>
+      <button class="btn" id="btn-pause" data-a="pause" disabled>Pause</button>
+      <button class="btn" id="btn-resume" data-a="resume" disabled>Resume</button>
+      <button class="btn danger" id="btn-stop" data-a="stop" disabled>Stop</button>
+      <button class="btn ghost" id="btn-retry" data-a="retry">Retry Eligible Failures</button>
+      <button class="btn ghost" id="btn-reset" data-a="reset">Reset Pending Request History</button>
+      <a class="btn ghost" href="#/execution-history">View logs</a>
+    </div>
+  </section>
+
+  <!-- Filter & Search Toolbar -->
+  <section class="toolbar" aria-label="Request filters and search">
+    <input type="search" id="q" placeholder="Search username or display name" aria-label="Search username or display name">
+    <select id="st" aria-label="Filter by status">
+      <option value="">All statuses</option>
+      <option value="PENDING">Pending</option>
+      <option value="CANCELLED">Successfully Cancelled</option>
+      <option value="ALREADY_CANCELLED">Already Cancelled</option>
+      <option value="ACCEPTED">Accepted</option>
+      <option value="PROFILE_UNAVAILABLE">Profile Unavailable</option>
+      <option value="FAILED">Failed</option>
+      <option value="NEEDS_REVIEW">Needs Review</option>
+    </select>
+    <select id="sort-sel" aria-label="Sort order">
+      <option value="oldest" selected>Oldest First (Default)</option>
+      <option value="newest">Newest First</option>
+      <option value="user_asc">Username A–Z</option>
+      <option value="user_desc">Username Z–A</option>
+    </select>
+    <select id="sz" aria-label="Page size">
+      <option value="25">25</option>
+      <option value="50" selected>50</option>
+      <option value="100">100</option>
+      <option value="200">200</option>
+    </select>
+    <span class="chip" id="selc">0 selected</span>
+    <button class="btn sm" data-s="page">Select page</button>
+    <button class="btn sm" data-s="filtered">Select all filtered</button>
+    <button class="btn sm" data-s="pending">Select all pending</button>
+    <button class="btn sm ghost" data-s="clear">Clear</button>
+  </section>
+
+  <!-- Section 12: 9 Columns Table -->
+  <section class="tablewrap" aria-label="Pending Requests Table">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:36px"><input type="checkbox" id="all" aria-label="Select page"></th>
+          <th class="sortable" data-sort="username">Username</th>
+          <th class="sortable" data-sort="displayName">Display Name</th>
+          <th class="sortable" data-sort="requestedAt">Request Date</th>
+          <th>Request Age</th>
+          <th class="sortable" data-sort="relationship">Current Relationship</th>
+          <th class="sortable" data-sort="status">Cancellation Status</th>
+          <th class="sortable" data-sort="lastAttemptAt">Last Attempt</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="tb">
+        <!-- Rendered dynamically by views.js -->
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="pager" id="pg"></footer>
+</div>
+
+<!-- Modal: Cancel All Pending Confirmation -->
+<div id="modal-container"></div>
+
+<script type="module" src="/assets/js/app.js"></script>
+</body>
+</html>

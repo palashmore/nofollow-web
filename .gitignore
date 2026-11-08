@@ -1,0 +1,13 @@
+node_modules/
+profile/
+data/
+logs/
+backups/
+old/
+failed-shots/
+*.tmp
+profile-chromium/
+*.lock
+connections/
+*.vbs
+user_prompt_full.txt

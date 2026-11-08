@@ -12,8 +12,6 @@ logs/
 backups/
 unfollow.mjs
 run.bat
-package.json
-package-lock.json
 *.mjs
 *.ps1
 *.bat

@@ -30,37 +30,204 @@ export const kpiCard = (l, v, id = '') => `<div class="card kpi"><div class="lab
 
 /* ---------------------------------------------------------------- dashboard */
 export function dashboard(el) {
-  el.innerHTML = `<h1>Overview</h1><p class="sub">Your Instagram account activity, relationship intelligence and automation at a glance.</p>
-    <div class="grid kpis" id="cards"></div>
-    <div class="grid two"><div class="card" id="eng"></div><div class="card" id="health"></div></div>
-    <div class="grid two" style="margin-top:14px"><div class="card" id="ov"></div><div class="card" id="imp"></div></div>
-    <div class="card" style="margin-top:14px"><h2>Recent activity</h2><div class="log" id="log" aria-live="polite"></div></div>`;
+  const account = store.data?.browser?.session?.account || 'Instagram User';
+  const syncTime = store.data?.summary?.importedAt ? fmtDate(store.data.summary.importedAt) : 'never';
+
+  el.innerHTML = `
+    <!-- Section A: Editorial Hero -->
+    <div class="obsidian-hero">
+      <div class="hero-main">
+        <h1 class="hero-title">Your account, in focus.</h1>
+        <div class="hero-sub">Relationship intelligence, account insights and controlled automation.</div>
+      </div>
+      <div class="hero-meta">
+        <div class="user-badge" id="hero-user-badge">
+          <div class="avatar-dot">IG</div>
+          <span>@${esc(account)}</span>
+        </div>
+        <span class="chip" id="hero-sync-chip"><span class="dot ok"></span>Synced ${syncTime}</span>
+        <a class="btn sm primary" href="#/non-followers">Review Non-Followers</a>
+      </div>
+    </div>
+
+    <!-- Section G: Quick Workspaces -->
+    <div class="quick-action-bar">
+      <span class="label">Workspaces:</span>
+      <a class="quick-pill" href="#/non-followers">${icon('userx', 14)} Non-Followers</a>
+      <a class="quick-pill" href="#/pending-requests">${icon('clock', 14)} Pending Requests</a>
+      <a class="quick-pill" href="#/queue">${icon('activity', 14)} Automation Queue</a>
+      <a class="quick-pill" href="#/intelligence">${icon('sparkles', 14)} Intelligence</a>
+      <a class="quick-pill" href="#/import-data">${icon('upload', 14)} Import &amp; Export</a>
+    </div>
+
+    <!-- Section B: Asymmetric Bento Metrics Layout -->
+    <div id="cards"></div>
+
+    <!-- Section D & E: Automation Command Center + Browser/Agent Health -->
+    <div class="grid two" style="margin-top:20px">
+      <div class="card" id="eng"></div>
+      <div class="card" id="health"></div>
+    </div>
+
+    <!-- Section C: Relationship Distribution & Ingestion Status -->
+    <div class="grid two" style="margin-top:20px">
+      <div class="card" id="ov"></div>
+      <div class="card" id="imp"></div>
+    </div>
+
+    <!-- Section F: Real-Time Activity Timeline -->
+    <div class="card" style="margin-top:20px">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <h2 style="margin:0">Activity Timeline</h2>
+        <span class="chip" style="font-size:11px"><span class="dot ok"></span>Live Event Stream</span>
+      </div>
+      <div class="log" id="log" aria-live="polite"></div>
+    </div>`;
+
   const panel = enginePanel($('#eng', el), 'unfollow');
   const health = healthPanel($('#health', el));
 
-  // Only the data-driven blocks are redrawn on a refresh; the control panels keep their inputs and focus.
   function drawData() {
     const d = store.data, k = d.kpis;
-    const cards = [
-      ['Total following', k.following, 'users'], ['Total followers', k.followers, 'users'], ["Don't follow back", k.nonFollowers, 'userx', 'accent'], ['Mutual followers', k.mutual, 'heart'],
-      ['Already unfollowed', k.alreadyUnfollowed, 'check'], ['Successfully unfollowed', k.unfollowed, 'check'], ['Pending review', k.pendingReview, 'clock'], ['Failed accounts', k.failed, 'ban'],
-    ];
-    $('#cards', el).innerHTML = cards.map(c => `<div class="card kpi ${c[3] || ''}"><div class="label">${icon(c[2], 14)} ${c[0]}</div><div class="value">${fmtNum(c[1])}</div></div>`).join('');
+    const account = d.browser?.session?.account || 'Instagram User';
+    const heroBadge = $('#hero-user-badge span', el);
+    if (heroBadge) heroBadge.textContent = `@${account}`;
+
+    // Bento composition inside #cards
+    $('#cards', el).innerHTML = `
+      <div class="bento-overview">
+        <!-- Hero Highlight Metric: Don't Follow Back -->
+        <div class="hero-kpi card kpi accent">
+          <div>
+            <div class="label">${icon('userx', 15)} Don't follow back</div>
+            <div class="value">${fmtNum(k.nonFollowers)}</div>
+            <div class="desc">Unreciprocated accounts you follow that do not follow you back.</div>
+          </div>
+          <a class="hero-action" href="#/non-followers">Review &amp; Clean Up →</a>
+        </div>
+
+        <!-- Secondary Metrics Trio -->
+        <div class="sub-kpi card kpi">
+          <div class="label">${icon('users', 14)} Total followers</div>
+          <div class="value">${fmtNum(k.followers)}</div>
+          <div class="tag">Audience &amp; fans</div>
+        </div>
+
+        <div class="sub-kpi card kpi">
+          <div class="label">${icon('users', 14)} Total following</div>
+          <div class="value">${fmtNum(k.following)}</div>
+          <div class="tag">Accounts you follow</div>
+        </div>
+
+        <div class="sub-kpi card kpi">
+          <div class="label">${icon('heart', 14)} Mutual followers</div>
+          <div class="value">${fmtNum(k.mutual)}</div>
+          <div class="tag">Reciprocal connections</div>
+        </div>
+      </div>
+
+      <!-- Tertiary Status Metric Row -->
+      <div class="tertiary-kpis">
+        <div class="tertiary-card card kpi">
+          <div class="info-block">
+            <span class="label">Already unfollowed</span>
+            <span class="value">${fmtNum(k.alreadyUnfollowed)}</span>
+          </div>
+          ${icon('check', 16)}
+        </div>
+        <div class="tertiary-card card kpi">
+          <div class="info-block">
+            <span class="label">Successfully unfollowed</span>
+            <span class="value">${fmtNum(k.unfollowed)}</span>
+          </div>
+          ${icon('check', 16)}
+        </div>
+        <div class="tertiary-card card kpi">
+          <div class="info-block">
+            <span class="label">Pending review</span>
+            <span class="value">${fmtNum(k.pendingReview)}</span>
+          </div>
+          ${icon('clock', 16)}
+        </div>
+        <div class="tertiary-card card kpi">
+          <div class="info-block">
+            <span class="label">Failed accounts</span>
+            <span class="value">${fmtNum(k.failed)}</span>
+          </div>
+          ${icon('ban', 16)}
+        </div>
+      </div>
+    `;
+
+    // Relationship Distribution in #ov
     const fans = d.summary?.totals.fans || 0, tot = (k.mutual + k.nonFollowers + fans) || 1;
-    $('#ov', el).innerHTML = `<h2>Relationship overview</h2>
-      <div class="bar"><i style="width:${(k.mutual / tot) * 100}%;background:var(--ok)"></i><i style="width:${(k.nonFollowers / tot) * 100}%;background:var(--accent)"></i><i style="width:${(fans / tot) * 100}%;background:var(--info)"></i></div>
-      <div class="legend"><span style="--c:var(--ok)">Mutual ${fmtNum(k.mutual)}</span><span style="--c:var(--accent)">Don't follow back ${fmtNum(k.nonFollowers)}</span><span style="--c:var(--info)">Follow you, you don't follow ${fmtNum(fans)}</span></div>
-      <p class="sub" style="margin:14px 0 0">Remaining to process: <b style="color:var(--text)">${fmtNum(k.remaining)}</b> · Unavailable profiles: ${fmtNum(k.unavailable)}</p>`;
+    const mutualPct = ((k.mutual / tot) * 100).toFixed(1);
+    const nonFollowPct = ((k.nonFollowers / tot) * 100).toFixed(1);
+    const fansPct = ((fans / tot) * 100).toFixed(1);
+
+    $('#ov', el).innerHTML = `
+      <div class="row" style="justify-content:space-between;margin-bottom:6px">
+        <h2 style="margin:0">Relationship Distribution</h2>
+        <span class="chip" style="font-size:11px">${fmtNum(tot)} Total Analyzed</span>
+      </div>
+      <p class="sub" style="margin:0 0 12px;font-size:12.5px">Proportional audience composition from your verified data export.</p>
+      
+      <div class="viz-meter">
+        <i style="width:${mutualPct}%;background:var(--ok)" title="Mutual: ${mutualPct}%"></i>
+        <i style="width:${nonFollowPct}%;background:var(--accent)" title="Don't Follow Back: ${nonFollowPct}%"></i>
+        <i style="width:${fansPct}%;background:var(--info)" title="Fans: ${fansPct}%"></i>
+      </div>
+
+      <div class="viz-legend">
+        <div class="legend-item">
+          <div class="legend-color" style="background:var(--ok)"></div>
+          <div class="legend-data">
+            <span class="legend-name">Mutual</span>
+            <span class="legend-val">${fmtNum(k.mutual)} <small style="color:var(--muted);font-weight:400">(${mutualPct}%)</small></span>
+          </div>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background:var(--accent)"></div>
+          <div class="legend-data">
+            <span class="legend-name">Don't Follow Back</span>
+            <span class="legend-val">${fmtNum(k.nonFollowers)} <small style="color:var(--muted);font-weight:400">(${nonFollowPct}%)</small></span>
+          </div>
+        </div>
+        <div class="legend-item">
+          <div class="legend-color" style="background:var(--info)"></div>
+          <div class="legend-data">
+            <span class="legend-name">Fans (Follow You)</span>
+            <span class="legend-val">${fmtNum(fans)} <small style="color:var(--muted);font-weight:400">(${fansPct}%)</small></span>
+          </div>
+        </div>
+      </div>
+      <p class="sub" style="margin:14px 0 0;font-size:12px">Remaining to process: <b style="color:var(--text)">${fmtNum(k.remaining)}</b> · Unavailable profiles: ${fmtNum(k.unavailable)}</p>
+    `;
+
+    // Ingestion Status in #imp
     const s = d.summary;
     $('#imp', el).innerHTML = !s
-      ? `<h2>Import status</h2><div class="empty"><h2>No data imported yet</h2><p>Import your Instagram export to begin.</p><a class="btn primary" href="#/import-data">Import data</a></div>`
-      : `<h2>Import status</h2><p class="sub" style="margin:0 0 10px">Imported ${fmtDate(s.importedAt)}</p>
-         ${s.warnings.map(w => `<div class="notice ${/INCOMPLETE|No followers|No following/.test(w) ? 'bad' : ''}">${esc(w)}</div>`).join('') || '<div class="notice ok">Export looks complete.</div>'}
-         <div class="legend">${s.files.filter(f => f.role).map(f => `<span style="--c:var(--accent)">${esc(f.name)} · ${fmtNum(f.count)}</span>`).join('')}</div>`;
+      ? `<h2>Import Status</h2><div class="empty"><h2>No data imported yet</h2><p>Import your Instagram export to begin relationship analysis.</p><a class="btn primary" href="#/import-data">Import data</a></div>`
+      : `<div class="row" style="justify-content:space-between;margin-bottom:6px">
+           <h2 style="margin:0">Import Status</h2>
+           <span class="chip" style="font-size:11px">${s.files?.length || 0} Files Verified</span>
+         </div>
+         <p class="sub" style="margin:0 0 10px;font-size:12.5px">Ingested ${fmtDate(s.importedAt)}</p>
+         ${s.warnings.map(w => `<div class="notice ${/INCOMPLETE|No followers|No following/.test(w) ? 'bad' : ''}">${esc(w)}</div>`).join('') || '<div class="notice ok">Export verified and structurally complete.</div>'}
+         <div class="legend" style="margin-top:12px">${s.files.filter(f => f.role).map(f => `<span style="--c:var(--accent)">${esc(f.name)} · ${fmtNum(f.count)}</span>`).join('')}</div>`;
   }
   drawData();
 
-  const log = $('#log', el); const line = e => `<div class="${e.level}"><span class="t">${new Date(e.timestamp).toLocaleTimeString()}</span> ${e.username ? '@' + esc(e.username) + ' ' : ''}${esc(e.message)}</div>`;
+  const log = $('#log', el);
+  const line = e => `
+    <div class="timeline-entry ${e.level}">
+      <div class="timeline-dot ${e.level === 'SUCCESS' ? 'ok' : ['ERROR', 'CRITICAL'].includes(e.level) ? 'bad' : e.level === 'WARNING' ? 'warn' : ''}"></div>
+      <div class="timeline-content">
+        <div class="timeline-time">${new Date(e.timestamp).toLocaleTimeString()}${e.username ? ' · @' + esc(e.username) : ''}</div>
+        <div class="timeline-msg">${esc(e.message)}</div>
+      </div>
+    </div>
+  `;
   log.innerHTML = store.logs.slice(-40).map(line).join('') || '<span class="t">No activity yet.</span>';
   log.scrollTop = log.scrollHeight;
   return {

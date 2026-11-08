@@ -10,7 +10,8 @@ test('Non-Followers Regression: calculations match ground truth exactly', () => 
   const exportDir = 'C:/Users/lenovo/Downloads/instagram-palash_more-2026-11-07-WFz6R9Dp/connections/followers_and_following';
   const followersHtml = fs.readFileSync(path.join(exportDir, 'followers_1.html'), 'utf8');
   const followingHtml = fs.readFileSync(path.join(exportDir, 'following.html'), 'utf8');
-  const pendingHtml = fs.readFileSync(path.join(exportDir, 'pending_follow_requests.html'), 'utf8');
+  const origArchive = path.join(exportDir, 'pending_follow_requests.html.orig-archive');
+  const pendingHtml = fs.readFileSync(fs.existsSync(origArchive) ? origArchive : path.join(exportDir, 'pending_follow_requests.html'), 'utf8');
 
   const parsedFollowers = { name: 'followers_1.html', ...parseExportFile('followers_1.html', followersHtml) };
   const parsedFollowing = { name: 'following.html', ...parseExportFile('following.html', followingHtml) };

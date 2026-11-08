@@ -79,7 +79,10 @@ export class BrowserSessionManager {
   /** Quick, side-effect free cookie check. Display code must use sessionInfo, which is only set by verifySession(). */
   async loggedIn() {
     if (!this.ctx) return false;
-    try { return (await this.ctx.cookies('https://www.instagram.com')).some(c => c.name === 'sessionid'); } catch { return false; }
+    try {
+      const cookies = await this.ctx.cookies();
+      return cookies.some(c => (c.domain.includes('instagram.com') || c.domain === '.instagram.com') && (c.name === 'sessionid' || c.name === 'ds_user_id'));
+    } catch { return false; }
   }
 
   /** Full check: loads the Instagram home page in the action tab and classifies what is really shown. */
@@ -87,11 +90,11 @@ export class BrowserSessionManager {
     await this.ensureBrowser();
     try {
       const page = await this.tabs.action();
-      const hasCookie = await this.loggedIn();
       await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: navTimeout });
       const end = Date.now() + elementTimeout;
       let r = { state: SESSION.UNKNOWN };
       while (Date.now() < end) {
+        const hasCookie = await this.loggedIn();
         r = classifySession({ ...(await takeSessionSnapshot(page)), hasCookie });
         if (r.state !== SESSION.UNKNOWN) break;
         await sleep(400);

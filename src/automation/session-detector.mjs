@@ -24,14 +24,22 @@ export function classifySession(s) {
 
 export function takeSessionSnapshot(page) {
   return page.evaluate(() => {
-    const img = document.querySelector('nav img[alt$="profile picture"], a[href^="/"] img[alt$="profile picture"]');
+    const img = document.querySelector('nav img[alt*="profile picture"], a[href^="/"] img[alt*="profile picture"], [role="navigation"] img[alt*="profile picture"], header img[alt*="profile picture"]');
+    const hasNav = !!document.querySelector('nav, [role=navigation], a[href="/explore/"], a[href="/direct/inbox/"], a[href^="/direct/"], a[href="/reels/"], svg[aria-label="Home"], svg[aria-label="Search"], svg[aria-label="Explore"], svg[aria-label="Messages"], svg[aria-label="New post"], svg[aria-label="Your profile"]');
+    let account = img ? (img.getAttribute('alt') || '').replace(/['’]s profile picture$/i, '').trim() : null;
+    if (!account) {
+      const link = document.querySelector('a[href^="/"][role="link"] span, nav a[href^="/"]:last-child');
+      const href = link?.closest('a')?.getAttribute('href') || '';
+      const m = href.match(/^\/([a-zA-Z0-9._]+)\/?$/);
+      if (m && !['explore', 'reels', 'direct', 'stories'].includes(m[1])) account = m[1];
+    }
     return {
       url: location.href,
       hasLoginForm: !!document.querySelector('input[name=password]'),
-      hasNav: !!document.querySelector('nav, [role=navigation], a[href="/explore/"], a[href="/direct/inbox/"]'),
+      hasNav,
       bodyText: ((document.body && document.body.innerText) || '').slice(0, 3000),
       dialogText: [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].map(d => d.innerText).join('\n').slice(0, 2000),
-      account: img ? (img.getAttribute('alt') || '').replace(/['’]s profile picture$/, '') : null,
+      account,
     };
   });
 }

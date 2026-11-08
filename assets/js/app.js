@@ -9,7 +9,7 @@ const ROUTES = [
   { id: 'dashboard', label: 'Dashboard', icon: 'home', render: V.dashboard },
   { sep: 'Relationships' },
   { id: 'non-followers', label: 'Non-Followers', icon: 'userx', count: k => k.nonFollowers, render: V.tableView({ id: 'nf', title: "Non-Followers", list: 'nonFollowers', selectable: true, engine: 'unfollow', sub: "Manage accounts that you follow but that do not follow you back." }) },
-  { id: 'followers', label: 'Followers', icon: 'users', count: k => k.followers, render: V.tableView({ id: 'fo', title: 'Followers', lists: [['followers', 'All followers'], ['fans', "I don't follow back"]], selectable: true, sub: 'People who follow you.' }) },
+  { id: 'followers', label: 'Followers', icon: 'users', count: k => k.followers, render: V.tableView({ id: 'fo', title: 'Followers', lists: [['followers', 'All followers'], ['fans', "I don't follow back"]], selectable: true, engine: 'unfollow', sub: 'People who follow you.' }) },
   { id: 'following', label: 'Following', icon: 'users', count: k => k.following, render: V.tableView({ id: 'fg', title: 'Following', list: 'following', selectable: true, engine: 'unfollow', sub: 'Everyone you follow.' }) },
   { id: 'mutual-followers', label: 'Mutual Followers', icon: 'heart', count: k => k.mutual, render: V.tableView({ id: 'mu', title: 'Mutual followers', list: 'mutual', selectable: true, engine: 'unfollow', sub: 'You follow each other.' }) },
   { id: 'pending-requests', label: 'Pending Requests', icon: 'clock', count: k => k.cancel?.total, render: V.tableView({ id: 'pe', title: 'Pending requests', kind: 'requests', lists: [['pending', 'Sent (outgoing)'], ['incoming', 'Received (incoming)']], selectable: true, engine: 'cancel', sub: 'Follow requests you sent to private accounts can be cancelled here, one at a time. Requests other people sent to you are listed separately and never touched.' }) },
@@ -61,8 +61,8 @@ function renderTopbar() {
     <span class="chip" id="chip-browser" title="Playwright Browser Status"><span class="dot ${br[0]}"></span>${br[1]}</span>
     <span class="chip" id="chip-ig" title="Instagram Session Status"><span class="dot ${ig[0]}"></span>${ig[1]}</span>
     <span class="chip" id="chip-engine" title="Automation Engine Status"><span class="dot ${en[0]}"></span>${esc(en[1])}</span>
-    <span class="chip" title="Export Ingestion Timestamp">Synced ${d.summary ? fmtDate(d.summary.importedAt) : 'never'}</span>
     <span class="spacer"></span>
+    ${b.session.state !== 'AUTHENTICATED' ? '<button class="btn sm primary" id="btn-verify-topbar" title="Verify Instagram Login">Verify Login</button>' : ''}
     <button class="btn sm" id="ig">${b.open ? 'Show Instagram' : 'Open Instagram'}</button>
     ${remote ? `<button class="btn sm ghost" id="btn-agent-status" title="Manage Local Agent Pairing">Agent Settings</button>` : ''}
     <button class="btn sm ghost" id="theme" aria-label="Switch theme" title="Toggle Theme">${icon('sun', 16)}</button>
@@ -113,6 +113,22 @@ document.addEventListener('click', async e => {
   if (e.target.closest('#theme')) { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; setTheme(t); post('/api/settings', { theme: t }).catch(() => {}); }
   if (e.target.closest('#menu')) $('#sidebar').classList.toggle('open');
   if (e.target.closest('#ig')) { try { await post('/api/browser/open'); await refresh(); } catch (err) { toast(err.message, 'err'); } }
+  if (e.target.closest('#btn-verify-topbar')) {
+    const btn = e.target.closest('#btn-verify-topbar');
+    const orig = btn.textContent;
+    btn.textContent = 'Verifying...';
+    btn.disabled = true;
+    try {
+      const r = await post('/api/session/verify');
+      toast(r.state === 'AUTHENTICATED' ? `Instagram verified${r.account ? ' (@' + r.account + ')' : ''}` : (r.reason || 'Login not verified'), r.state === 'AUTHENTICATED' ? 'ok' : 'warn');
+      await refresh();
+    } catch (err) {
+      toast(err.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = orig;
+    }
+  }
   if (e.target.closest('#btn-pair-submit')) {
     const pin = $('#pair-pin-field')?.value;
     try {

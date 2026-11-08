@@ -16,7 +16,7 @@ if (-not $nodePath) {
     Write-Error "Node.js executable was not found in PATH. Please ensure Node.js is installed."
     exit 1
 }
-Write-Host "[✓] Node.js located: $nodePath" -ForegroundColor Green
+Write-Host "[OK] Node.js located: $nodePath" -ForegroundColor Green
 
 # 2. Verify Project Directory and unfollow.mjs
 $entryFile = Join-Path $ProjectDir "unfollow.mjs"
@@ -24,7 +24,7 @@ if (-not (Test-Path $entryFile)) {
     Write-Error "Entry point unfollow.mjs not found at $entryFile"
     exit 1
 }
-Write-Host "[✓] Project Directory: $ProjectDir" -ForegroundColor Green
+Write-Host "[OK] Project Directory: $ProjectDir" -ForegroundColor Green
 
 # 3. Create or update runner script for clean background execution
 $launcherVbs = Join-Path $PSScriptRoot "run-agent-hidden.vbs"
@@ -34,7 +34,7 @@ WshShell.CurrentDirectory = "$ProjectDir"
 WshShell.Run "node unfollow.mjs", 0, False
 "@
 Set-Content -Path $launcherVbs -Value $vbsContent -Encoding ASCII
-Write-Host "[✓] Launcher script created: $launcherVbs" -ForegroundColor Green
+Write-Host "[OK] Launcher script created: $launcherVbs" -ForegroundColor Green
 
 # 4. Configure Task Scheduler Action & Trigger
 $action = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$launcherVbs`"" -WorkingDirectory $ProjectDir

@@ -13,7 +13,7 @@ try {
     $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     if ($existing) {
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-        Write-Host "[✓] Windows Task '$TaskName' has been cleanly removed." -ForegroundColor Green
+        Write-Host "[OK] Windows Task '$TaskName' has been cleanly removed." -ForegroundColor Green
     } else {
         Write-Host "[-] Windows Task '$TaskName' is not registered. Nothing to remove." -ForegroundColor Yellow
     }

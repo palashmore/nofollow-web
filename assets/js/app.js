@@ -160,6 +160,14 @@ async function init() {
             <a class="btn ghost" href="http://127.0.0.1:4173" target="_blank" rel="noopener noreferrer">Open Local Dashboard Directly</a>
           </div>
         </div>
+        <div class="card" style="margin-top:14px;background:var(--surface-2);border-color:var(--border-subtle)">
+          <h4 style="margin:0 0 8px;font-size:13px;display:flex;align-items:center;gap:6px">${icon('sparkles', 14)} New user? 3-step setup:</h4>
+          <ol style="margin:0;padding-left:18px;font-size:12.5px;color:var(--text-sub);line-height:1.6">
+            <li>Download the portable agent from <a href="https://github.com/palashmore/nofollow-web" target="_blank" rel="noopener noreferrer" style="font-weight:600;color:var(--accent)">GitHub (nofollow-web)</a>.</li>
+            <li>Double-click <code>run.bat</code> on your Windows PC.</li>
+            <li>Enter the 6-character PIN shown in your terminal, or click <a href="http://127.0.0.1:4173" target="_blank" rel="noopener noreferrer" style="font-weight:600;color:var(--accent)">Open Local Dashboard Directly</a>.</li>
+          </ol>
+        </div>
         ${isMixed ? `
           <div class="notice bad" style="margin-top:16px">
             <b>Browser Local Network Access Policy:</b> Modern browsers block direct HTTPS-to-HTTP loopback requests without user permission.

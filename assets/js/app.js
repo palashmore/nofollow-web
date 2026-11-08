@@ -5,9 +5,10 @@ import * as V from './views.js';
 
 const NP = 'Pending / contact-style records from the export. Informational only: these are not followers and nothing here is ever unfollowed.';
 const ROUTES = [
+  { sep: 'Overview' },
   { id: 'dashboard', label: 'Dashboard', icon: 'home', render: V.dashboard },
   { sep: 'Relationships' },
-  { id: 'non-followers', label: 'Non-Followers', icon: 'userx', count: k => k.nonFollowers, render: V.tableView({ id: 'nf', title: "Non-followers", list: 'nonFollowers', selectable: true, engine: 'unfollow', sub: "People you follow who don't follow you back. Tick the ones to unfollow." }) },
+  { id: 'non-followers', label: 'Non-Followers', icon: 'userx', count: k => k.nonFollowers, render: V.tableView({ id: 'nf', title: "Non-Followers", list: 'nonFollowers', selectable: true, engine: 'unfollow', sub: "Manage accounts that you follow but that do not follow you back." }) },
   { id: 'followers', label: 'Followers', icon: 'users', count: k => k.followers, render: V.tableView({ id: 'fo', title: 'Followers', lists: [['followers', 'All followers'], ['fans', "I don't follow back"]], sub: 'People who follow you.' }) },
   { id: 'following', label: 'Following', icon: 'users', count: k => k.following, render: V.tableView({ id: 'fg', title: 'Following', list: 'following', sub: 'Everyone you follow.' }) },
   { id: 'mutual-followers', label: 'Mutual Followers', icon: 'heart', count: k => k.mutual, render: V.tableView({ id: 'mu', title: 'Mutual followers', list: 'mutual', sub: 'You follow each other.' }) },
@@ -16,9 +17,10 @@ const ROUTES = [
   { id: 'blocked-profiles', label: 'Blocked Profiles', icon: 'ban', render: V.tableView({ id: 'bl', title: 'Blocked profiles', list: 'blocked', sub: 'From blocked_profiles.' }) },
   { sep: 'Automation & Media' },
   { id: 'queue', label: 'Automation Queue', icon: 'clock', render: V.queueView },
-  { id: 'archive', label: 'Post Archive', icon: 'history', render: V.postArchiveView },
+  { id: 'archive', label: 'Post Archive', icon: 'archive', render: V.postArchiveView },
   { id: 'highlights', label: 'Stories & Highlights', icon: 'heart', render: V.storiesHighlightsView },
-  { id: 'intelligence', label: 'Followers Intelligence', icon: 'users', render: V.intelligenceView },
+  { id: 'intelligence', label: 'Followers Intelligence', icon: 'sparkles', render: V.intelligenceView },
+  { id: 'analytics', label: 'Analytics', icon: 'activity', render: V.analyticsView },
   { sep: 'System' },
   { id: 'execution-history', label: 'Execution History', icon: 'history', render: V.history },
   { id: 'import-data', label: 'Import Data', icon: 'upload', render: V.importView },
@@ -27,9 +29,17 @@ const ROUTES = [
 
 function renderShell() {
   const k = store.data?.kpis || {};
-  $('#sidebar').innerHTML = `<div class="brand"><span class="logo">${icon('userx', 16)}</span>NoFollow Web</div><nav class="nav">${ROUTES.map(r => r.sep
-    ? `<div class="sep">${r.sep}</div>`
-    : `<a href="#/${r.id}" data-id="${r.id}">${icon(r.icon)} ${r.label}${r.count && store.data?.summary ? `<span class="count">${fmtNum(r.count(k))}</span>` : ''}</a>`).join('')}</nav>`;
+  $('#sidebar').innerHTML = `
+    <div class="brand">
+      <div class="brand-icon">${icon('shield', 18)}</div>
+      <div class="brand-info">
+        <span class="brand-name">NoFollow Web</span>
+        <span class="brand-sub">Instagram Intelligence &amp; Automation</span>
+      </div>
+    </div>
+    <nav class="nav">${ROUTES.map(r => r.sep
+      ? `<div class="sep">${r.sep}</div>`
+      : `<a href="#/${r.id}" data-id="${r.id}">${icon(r.icon, 16)} <span>${r.label}</span>${r.count && store.data?.summary ? `<span class="count">${fmtNum(r.count(k))}</span>` : ''}</a>`).join('')}</nav>`;
   markActive();
   renderTopbar();
 }
@@ -44,13 +54,17 @@ function renderTopbar() {
   const en = e.status === 'IDLE' ? ['', 'Engine idle'] : e.status === 'RUNNING' ? ['ok', 'Running'] : ['SAFETY_PAUSED', 'FAILED'].includes(e.status) ? ['bad', e.status.replace('_', ' ').toLowerCase()] : ['warn', e.status.replace('_', ' ').toLowerCase()];
   const remote = isRemoteOrigin();
 
-  $('#topbar').innerHTML = `<button class="btn ghost menu-btn" id="menu" aria-label="Menu">${icon('menu')}</button>
-    ${remote ? `<span class="chip" id="chip-agent"><span class="dot ok"></span>Local Agent Active</span>` : ''}
-    <span class="chip" id="chip-browser"><span class="dot ${br[0]}"></span>${br[1]}</span><span class="chip" id="chip-ig"><span class="dot ${ig[0]}"></span>${ig[1]}</span><span class="chip" id="chip-engine"><span class="dot ${en[0]}"></span>${esc(en[1])}</span>
-    <span class="chip">Synced ${d.summary ? fmtDate(d.summary.importedAt) : 'never'}</span><span class="spacer"></span>
+  $('#topbar').innerHTML = `<button class="btn ghost menu-btn" id="menu" aria-label="Menu">${icon('menu', 18)}</button>
+    ${remote ? `<span class="chip" id="chip-agent" title="Local Windows Agent Connected"><span class="dot ok"></span>Local Agent Active</span>` : ''}
+    <span class="chip" id="chip-browser" title="Playwright Browser Status"><span class="dot ${br[0]}"></span>${br[1]}</span>
+    <span class="chip" id="chip-ig" title="Instagram Session Status"><span class="dot ${ig[0]}"></span>${ig[1]}</span>
+    <span class="chip" id="chip-engine" title="Automation Engine Status"><span class="dot ${en[0]}"></span>${esc(en[1])}</span>
+    <span class="chip" title="Export Ingestion Timestamp">Synced ${d.summary ? fmtDate(d.summary.importedAt) : 'never'}</span>
+    <span class="spacer"></span>
     <button class="btn sm" id="ig">${b.open ? 'Show Instagram' : 'Open Instagram'}</button>
     ${remote ? `<button class="btn sm ghost" id="btn-agent-status" title="Manage Local Agent Pairing">Agent Settings</button>` : ''}
-    <button class="btn sm ghost" id="theme" aria-label="Switch theme">${icon('sun')}</button><a class="btn sm ghost" href="#/settings" aria-label="Automation settings">${icon('gear')}</a>`;
+    <button class="btn sm ghost" id="theme" aria-label="Switch theme" title="Toggle Theme">${icon('sun', 16)}</button>
+    <a class="btn sm ghost" href="#/settings" aria-label="Automation settings" title="Settings">${icon('gear', 16)}</a>`;
 }
 
 function route() {

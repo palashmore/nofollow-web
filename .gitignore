@@ -11,3 +11,5 @@ profile-chromium/
 connections/
 *.vbs
 user_prompt_full.txt
+
+.vercel

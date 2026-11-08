@@ -30,7 +30,7 @@ export const kpiCard = (l, v, id = '') => `<div class="card kpi"><div class="lab
 
 /* ---------------------------------------------------------------- dashboard */
 export function dashboard(el) {
-  el.innerHTML = `<h1>Dashboard</h1><p class="sub">Who doesn't follow you back, and a controlled way to clean it up.</p>
+  el.innerHTML = `<h1>Overview</h1><p class="sub">Your Instagram account activity, relationship intelligence and automation at a glance.</p>
     <div class="grid kpis" id="cards"></div>
     <div class="grid two"><div class="card" id="eng"></div><div class="card" id="health"></div></div>
     <div class="grid two" style="margin-top:14px"><div class="card" id="ov"></div><div class="card" id="imp"></div></div>

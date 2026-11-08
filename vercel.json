@@ -4,7 +4,7 @@
   "trailingSlash": false,
   "rewrites": [
     {
-      "source": "/((?!assets/|pages/|favicon\\.ico).* )",
+      "source": "/((?!assets/|pages/|favicon\\.ico).*)",
       "destination": "/index.html"
     }
   ],

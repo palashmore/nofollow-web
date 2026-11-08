@@ -507,7 +507,7 @@ export function settingsView(el) {
   el.innerHTML = `<h1>Automation settings</h1><p class="sub">One action worker, one account at a time, with a fixed wait between actions. Invalid values are rejected, never changed silently.</p>
     <div class="card" style="max-width:720px"><h2>Execution</h2><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
       <label class="field">Execution profile<select id="s-executionProfile">${Object.entries(PROFILES).map(([k, p]) => `<option value="${k}">${p.name} (${p.intervalSec} s)</option>`).join('')}<option value="custom">Custom</option></select><span id="s-pnote"></span></label>
-      ${num('actionIntervalSec', 'Action interval (seconds)', 'Fixed wait between accounts, 5 to 600', 5, 600)}
+      ${num('actionIntervalSec', 'Action interval (seconds)', 'Fixed wait between accounts, 2 to 600', 2, 600)}
       ${num('navigationTimeoutSec', 'Navigation timeout (seconds)', 'Opening a profile, 10 to 120', 10, 120)}
       ${num('elementTimeoutSec', 'Element detection timeout (seconds)', 'Waiting for buttons to appear, 3 to 60', 3, 60)}
       ${num('maxAttempts', 'Retries per account', 'Bounded, 1 to 5', 1, 5)}

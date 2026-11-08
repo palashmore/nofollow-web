@@ -288,10 +288,10 @@ test('automation settings: profile sets the interval, values persist, invalid va
   const s = app.getSettings();
   assert.deepEqual([s.actionIntervalSec, s.navigationTimeoutSec, s.elementTimeoutSec, s.maxAttempts, s.executionProfile], [20, 45, 12, 3, 'custom']);
   assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'data', 'settings.json'), 'utf8')).actionIntervalSec, 20, 'saved to disk');
-  await page.fill('#s-actionIntervalSec', '2');           // below the minimum
+  await page.fill('#s-actionIntervalSec', '1');           // below the minimum
   await page.click('#save');
   await page.waitForSelector('.toast.err');
-  assert.match(await page.locator('.toast.err').first().innerText(), /between 5 and 600/);
+  assert.match(await page.locator('.toast.err').first().innerText(), /between 2 and 600/);
   assert.equal(app.getSettings().actionIntervalSec, 20, 'rejected value did not change anything');
   await page.fill('#s-actionIntervalSec', '20'); await page.fill('#s-maxAttempts', '9');
   await page.click('#save');
@@ -307,7 +307,7 @@ test('dashboard panel shows the configuration in use and can switch profile; the
   await page.waitForFunction(() => /interval 15 s/.test(document.querySelector('#e-cfg')?.textContent || ''));
   assert.equal(app.getSettings().actionIntervalSec, 15);
   assert.equal(app.engine.snapshot().intervalSec, 15, 'the engine uses the saved value');
-  await page.fill('#sp-interval', '3'); await page.locator('#sp-interval').blur();
+  await page.fill('#sp-interval', '1'); await page.locator('#sp-interval').blur();
   await page.waitForSelector('.toast.err');
   assert.equal(app.getSettings().actionIntervalSec, 15);
   await page.waitForFunction(() => document.querySelector('#sp-interval')?.value === '15', null, { timeout: 5000 });

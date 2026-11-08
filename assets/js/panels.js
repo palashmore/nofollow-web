@@ -33,7 +33,7 @@ export function enginePanel(host, mode = 'unfollow') {
       <label class="field" style="grid-template-columns:auto auto;align-items:center;gap:8px">Execution profile
         <select id="sp-preset" aria-label="Execution profile">${Object.entries(PROFILES).map(([k, p]) => `<option value="${k}">${p.name}</option>`).join('')}<option value="custom">Custom</option></select></label>
       <label class="field" style="grid-template-columns:auto 72px auto;align-items:center;gap:6px">Interval
-        <input type="number" id="sp-interval" min="5" max="600" step="1" aria-label="Seconds between actions"> s</label>
+        <input type="number" id="sp-interval" min="2" max="600" step="1" aria-label="Seconds between actions"> s</label>
       <span class="chip" id="sp-est"></span>
     </div>
     <div class="sub" style="margin:8px 0 0;font-size:12px" id="e-cfg"></div>

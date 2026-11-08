@@ -71,6 +71,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   theme: 'dark',
 });
 export const SETTING_LIMITS = Object.freeze({
-  actionIntervalSec: [5, 600], navigationTimeoutSec: [10, 120], elementTimeoutSec: [3, 60],
+  actionIntervalSec: [2, 600], navigationTimeoutSec: [10, 120], elementTimeoutSec: [3, 60],
   maxAttempts: [1, 5], maxPerRun: [1, 5000], errorThreshold: [2, 50],
 });

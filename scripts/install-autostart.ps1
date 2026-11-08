@@ -2,20 +2,25 @@
 [CmdletBinding()]
 param(
     [string]$TaskName = "NoFollowWebAgent",
-    [string]$ProjectDir = $PSScriptRoot | Split-Path -Parent
+    [string]$ProjectDir = ""
 )
 
 $ErrorActionPreference = "Stop"
+if (-not $ProjectDir) {
+    $ProjectDir = Split-Path $PSScriptRoot -Parent
+}
+
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "   NoFollow Web - Install Windows Automatic Agent Startup  " -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Verify Node.js availability
-$nodePath = (Get-Command node -ErrorAction SilentlyContinue)?.Source
-if (-not $nodePath) {
+$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+if (-not $nodeCmd) {
     Write-Error "Node.js executable was not found in PATH. Please ensure Node.js is installed."
     exit 1
 }
+$nodePath = $nodeCmd.Source
 Write-Host "[OK] Node.js located: $nodePath" -ForegroundColor Green
 
 # 2. Verify Project Directory and unfollow.mjs
@@ -62,7 +67,8 @@ try {
         -Settings $settings `
         -Description "NoFollow Web Local Automation Agent. Automatically boots on user logon in idle state." | Out-Null
 
-    Write-Host "`n[SUCCESS] Windows Task '$TaskName' successfully registered!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "[SUCCESS] Windows Task '$TaskName' successfully registered!" -ForegroundColor Green
     Write-Host "  Trigger: At logon for user '$env:USERNAME'"
     Write-Host "  Directory: $ProjectDir"
     Write-Host "  Safety Guard: Agent starts in IDLE mode. Zero mutations will run on startup." -ForegroundColor Yellow

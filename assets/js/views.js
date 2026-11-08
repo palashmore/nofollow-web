@@ -511,7 +511,7 @@ export function settingsView(el) {
       ${num('navigationTimeoutSec', 'Navigation timeout (seconds)', 'Opening a profile, 10 to 120', 10, 120)}
       ${num('elementTimeoutSec', 'Element detection timeout (seconds)', 'Waiting for buttons to appear, 3 to 60', 3, 60)}
       ${num('maxAttempts', 'Retries per account', 'Bounded, 1 to 5', 1, 5)}
-      ${num('maxPerRun', 'Max accounts per run', 'Hard cap for one run', 1, 5000)}
+      ${num('maxPerRun', 'Max accounts per run', 'Hard cap for one run, 1 to 30000', 1, 30000)}
       ${num('errorThreshold', 'Failure streak limit', 'Consecutive failures before a safety pause', 2, 50)}</div>
       <h2 style="margin-top:20px">Application</h2><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
       <label class="field">Browser<select id="s-browserChannel"><option value="chrome">Google Chrome</option><option value="msedge">Microsoft Edge</option><option value="">Playwright Chromium</option></select><span>Applies after the app restarts</span></label>

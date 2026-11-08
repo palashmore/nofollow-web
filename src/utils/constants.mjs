@@ -72,5 +72,5 @@ export const DEFAULT_SETTINGS = Object.freeze({
 });
 export const SETTING_LIMITS = Object.freeze({
   actionIntervalSec: [2, 600], navigationTimeoutSec: [10, 120], elementTimeoutSec: [3, 60],
-  maxAttempts: [1, 5], maxPerRun: [1, 5000], errorThreshold: [2, 50],
+  maxAttempts: [1, 5], maxPerRun: [1, 30000], errorThreshold: [2, 50],
 });

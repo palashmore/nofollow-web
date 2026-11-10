@@ -34,6 +34,13 @@ export function enginePanel(host, mode = 'unfollow') {
         <select id="sp-preset" aria-label="Execution profile">${Object.entries(PROFILES).map(([k, p]) => `<option value="${k}">${p.name}</option>`).join('')}<option value="custom">Custom</option></select></label>
       <label class="field" style="grid-template-columns:auto 72px auto;align-items:center;gap:6px">Interval
         <input type="number" id="sp-interval" min="2" max="600" step="1" aria-label="Seconds between actions"> s</label>
+      ${mode === 'cancel' ? `
+      <label class="field" style="grid-template-columns:auto auto;align-items:center;gap:8px">Order
+        <select id="cancel-order-select" aria-label="Processing order">
+          <option value="oldest" selected>Oldest First (2017+)</option>
+          <option value="newest">Newest First (Recent)</option>
+        </select>
+      </label>` : ''}
       <span class="chip" id="sp-est"></span>
     </div>
     <div class="sub" style="margin:8px 0 0;font-size:12px" id="e-cfg"></div>
@@ -88,11 +95,15 @@ export function enginePanel(host, mode = 'unfollow') {
         toast('Run started', 'ok');
       } else if (a === 'start' && mode === 'cancel') {
         const n = store.reqSelection.size;
-        if (!await confirmStart('Cancel selected follow requests?', `<p>You are about to process <b>${fmtNum(n)}</b> outgoing pending follow requests, one at a time, ${interval()} s apart. Requests that were accepted are never undone.</p>`, 'Confirm Cancellation')) return;
-        await post('/api/run/start', { mode: 'cancel', usernames: [...store.reqSelection], confirm: true });
-        toast('Cancellation started', 'ok');
+        const order = $('#cancel-order-select', host)?.value || 'oldest';
+        const isNewest = order === 'newest';
+        if (!await confirmStart('Cancel selected follow requests?', `<p>You are about to process <b>${fmtNum(n)}</b> outgoing pending follow requests, one at a time, ${interval()} s apart (${isNewest ? 'Newest First' : 'Oldest First'}). Requests that were accepted are never undone.</p>`, 'Confirm Cancellation')) return;
+        await post('/api/run/start', { mode: 'cancel', usernames: [...store.reqSelection], confirm: true, order });
+        toast(`Cancellation started (${isNewest ? 'Newest First' : 'Oldest First'})`, 'ok');
       } else if (a === 'all') {
         const p = await api('/api/cancel/preview');
+        const order = $('#cancel-order-select', host)?.value || 'oldest';
+        const isNewest = order === 'newest';
         const modalHtml = `
           <div style="font-size:14px;line-height:1.5">
             <p>You are about to process <b>${fmtNum(p.eligible)}</b> outgoing pending follow requests.</p>
@@ -105,15 +116,15 @@ export function enginePanel(host, mode = 'unfollow') {
                 <tr><td style="padding:4px 0;color:var(--muted)">Accepted:</td><td style="text-align:right;font-weight:600">${fmtNum(p.accepted || 0)}</td></tr>
                 <tr><td style="padding:4px 0;color:var(--muted)">Unavailable:</td><td style="text-align:right;font-weight:600">${fmtNum(p.unavailable || 0)}</td></tr>
                 <tr><td style="padding:4px 0;color:var(--muted)">Needs review:</td><td style="text-align:right;font-weight:600">${fmtNum(p.needsReview || 0)}</td></tr>
-                <tr style="border-top:1px solid var(--border)"><td style="padding:6px 0 2px;color:var(--muted)">Processing order:</td><td style="text-align:right;font-weight:700;color:var(--ok)">Oldest First</td></tr>
+                <tr style="border-top:1px solid var(--border)"><td style="padding:6px 0 2px;color:var(--muted)">Processing order:</td><td style="text-align:right;font-weight:700;color:var(--ok)">${isNewest ? 'Newest First (Most Recent)' : 'Oldest First'}</td></tr>
               </table>
             </div>
-            <p style="margin:0;font-size:12px;color:var(--muted)">Oldest requests are processed first. Each request is verified on Instagram before clicking; accepted requests are kept.</p>
+            <p style="margin:0;font-size:12px;color:var(--muted)">${isNewest ? 'Most recent requests sent in 2026 are processed first.' : 'Oldest requests from 2017+ are processed first.'} Each request is verified on Instagram before clicking; accepted requests are kept.</p>
           </div>
         `;
         if (!await confirmStart('Cancel All Pending Follow Requests?', modalHtml, 'Confirm Cancellation')) return;
-        await post('/api/run/start', { mode: 'cancel', all: true, confirm: true });
-        toast('Cancellation started (Oldest First)', 'ok');
+        await post('/api/run/start', { mode: 'cancel', all: true, confirm: true, order });
+        toast(`Cancellation started (${isNewest ? 'Newest First' : 'Oldest First'})`, 'ok');
       } else if (a === 'pause') await post('/api/run/pause');
       else if (a === 'resume') { const r = await post('/api/run/resume'); if (WAITING.has(r.status) && r.pauseReason) toast(r.pauseReason, 'warn'); }
       else if (a === 'stop') { if (await confirmModal({ title: 'Stop the run?', body: '<p>Progress is saved. The browser stays open. You can start again later.</p>', confirmText: 'Stop' })) await post('/api/run/stop'); }

@@ -3,9 +3,9 @@ import { FOLLOWING_BTN, REQUESTED_BTN, classify, takeSnapshot } from './relation
 import { AutomationError, ERR } from './errors.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const UNFOLLOW_ITEM = /^Unfollow$/;
+const UNFOLLOW_ITEM = /\bUnfollow\b/i;
 // "Cancel" alone is the dismiss button of the dialog and is deliberately NOT matched.
-const CANCEL_ITEM = /^(Unfollow|Cancel request|Cancel follow request)$/i;
+const CANCEL_ITEM = /\b(Unfollow|Cancel request|Cancel follow request)\b/i;
 
 /**
  * Finds the one relationship button and proves it is safe to click before clicking:
@@ -33,6 +33,7 @@ export async function pickButton(page, pattern, timeout) {
 async function act(page, { button, item, elementTimeout = 10000 }) {
   const btn = await pickButton(page, button, elementTimeout);
   await page.bringToFront().catch(() => {});   // the action tab must be in front for the click, whatever manual tabs are open
+  await btn.first().scrollIntoViewIfNeeded().catch(() => {});
   await btn.click({ timeout: elementTimeout });
 
   const end = Date.now() + elementTimeout + 4000;
@@ -41,17 +42,26 @@ async function act(page, { button, item, elementTimeout = 10000 }) {
     last = classify(await takeSnapshot(page));
     if ([REL.NOT_FOLLOWING, REL.ACTION_BLOCKED, REL.CAPTCHA, REL.LOGIN_REQUIRED].includes(last.state)) return last;
     if (clicks < 2) {
-      const dialog = page.locator('[role=dialog], [role=alertdialog]');
+      const dialog = page.locator('[role=dialog], [role=alertdialog], div[tabindex="-1"], div._a9-z, div[class*="Sheet"]');
       let target = null;
       if (await dialog.count() > 0) {
         const dialogBtns = dialog.locator('button, [role=button]').filter({ hasText: item }).filter({ visible: true });
         if (await dialogBtns.count() > 0) target = dialogBtns.first();
+        else {
+          const dialogEntries = dialog.getByText(item).filter({ visible: true });
+          if (await dialogEntries.count() > 0) target = dialogEntries.first();
+        }
+      }
+      if (!target) {
+        const btns = page.locator('button, [role=button]').filter({ hasText: item }).filter({ visible: true });
+        if (await btns.count() > 0) target = btns.first();
       }
       if (!target) {
         const entry = page.getByText(item).filter({ visible: true });
         if (await entry.count() >= 1) target = entry.first();
       }
       if (target) {
+        await target.scrollIntoViewIfNeeded().catch(() => {});
         await target.click({ timeout: elementTimeout });
         clicks++;
       }

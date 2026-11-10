@@ -57,7 +57,11 @@ export class BrowserSessionManager {
     const holder = this.#lockHolder();
     if (holder) throw new BrowserLaunchError(`Another NoFollow Web process (pid ${holder}) already uses this browser profile. Close it first.`);
     fs.writeFileSync(this.lockFile, String(process.pid));
-    const opts = { headless: !!process.env.NF_HEADLESS, viewport: null };   // NF_HEADLESS is for automated tests only
+    const opts = {
+      headless: !!process.env.NF_HEADLESS,
+      viewport: null,
+      args: ['--start-maximized', '--window-size=1280,900']
+    };   // NF_HEADLESS is for automated tests only
     const launch = (dir, channel) => chromium.launchPersistentContext(dir, channel ? { ...opts, channel } : opts);
     try {
       this.ctx = await launch(this.profileDir, this.channel);

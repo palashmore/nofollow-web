@@ -236,7 +236,7 @@ export class AutomationController extends EventEmitter {
         onRetry: (e, n) => this.#log('WARNING', u, STATUS.RETRY_PENDING, `${classifyError(e)}: ${e.message.split('\n')[0]}; retry ${n}.`, { errorCategory: classifyError(e) }),
       });
       const result = await this.#decide(u, insp, s);
-      if (result === 'done') this.monitor.ok();
+      if (result === 'done' && this.checkpoint.get(u)?.status !== STATUS.FAILED) this.monitor.ok();
       return result;
     } catch (e) { return this.#error(u, e, s); }
   }

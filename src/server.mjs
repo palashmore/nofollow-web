@@ -94,10 +94,10 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
   const opts = () => ({ navTimeout: settings.navigationTimeoutSec * 1000, elementTimeout: settings.elementTimeoutSec * 1000 });
 
   /** Start a job. Only ONE automation may run at a time, whichever kind it is. */
-  async function startJob(job, usernames, includeRetry = false) {
+  async function startJob(job, usernames, includeRetry = false, order = 'oldest') {
     const busy = activeEngine();
     if (busy) throw new Error(`Another automation is already running (${busy.job.name}, ${busy.status.toLowerCase().replace('_', ' ')}).`);
-    return engines[job].start(usernames, { includeRetry });
+    return engines[job].start(usernames, { includeRetry, order });
   }
 
   async function api(req, res, url) {
@@ -247,13 +247,15 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         const job = b.mode === 'cancel' ? 'cancel' : 'unfollow';
         if (!accounts.sets) return json(res, 400, { error: 'Import your data first.' });
         let list;
+        const order = b.order || 'oldest';
         if (job === 'cancel') {
           const outgoing = new Set(accounts.list('pending'));   // only requests YOU sent; incoming requests and followings are never touched
           list = b.all ? accounts.cancelEligible() : (b.usernames || []).filter(u => outgoing.has(u));
           const dates = accounts.model?.requestDates || {};
-          list.sort((a, b) => (dates[a] || 0) - (dates[b] || 0));
+          const isNewest = /new(est)?/i.test(order);
+          list.sort((a, b) => isNewest ? (dates[b] || 0) - (dates[a] || 0) : (dates[a] || 0) - (dates[b] || 0));
         } else list = (b.usernames || []).filter(u => accounts.sets.following.has(u));   // can only unfollow accounts you follow
-        return json(res, 200, await startJob(job, list, !!b.includeRetry));
+        return json(res, 200, await startJob(job, list, !!b.includeRetry, order));
       }
       case 'POST /api/run/retry-failed': {
         const job = JSON.parse(await body(req) || '{}').mode === 'cancel' ? 'cancel' : 'unfollow';

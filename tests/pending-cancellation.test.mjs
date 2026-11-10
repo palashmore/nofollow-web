@@ -60,6 +60,32 @@ test('Pending cancellation: strictly processes oldest requests first', async () 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('Pending cancellation: processes newest requests first when order is newest', async () => {
+  const userDates = {
+    user_newest_2026: 1794002700000,
+    user_oldest_2017: 1485837060000,
+    user_middle_2019: 1562347380000
+  };
+
+  const { engine, ig, dir } = setupPendingEngine(
+    {
+      user_newest_2026: 'REQUESTED',
+      user_oldest_2017: 'REQUESTED',
+      user_middle_2019: 'REQUESTED'
+    },
+    {},
+    {},
+    userDates
+  );
+
+  await engine.start(['user_oldest_2017', 'user_newest_2026', 'user_middle_2019'], { order: 'newest' });
+  await untilIdle(engine);
+
+  assert.deepEqual(ig.calls.inspect, ['user_newest_2026', 'user_middle_2019', 'user_oldest_2017']);
+  assert.equal(engine.snapshot().processingOrder, 'NEWEST_FIRST');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('Pending cancellation: still pending request is cancelled and confirmed', async () => {
   const { engine, checkpoint, ig, dir } = setupPendingEngine({ target_user: 'REQUESTED' });
   await engine.start(['target_user']);

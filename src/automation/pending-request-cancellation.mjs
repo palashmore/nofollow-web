@@ -33,9 +33,24 @@ export class PendingRequestCancellationEngine extends AutomationController {
   }
 
   /**
-   * Filters and sorts eligible pending requests oldest first.
+   * Sorts usernames in newest-first chronological order (most recent requests first).
+   * @param {Array<string>} usernames
+   * @returns {Array<string>}
    */
-  eligible(usernames, { includeRetry = false } = {}) {
+  sortNewestFirst(usernames) {
+    const dates = this.accountService?.model?.requestDates || {};
+    return [...usernames].sort((a, b) => {
+      const tsA = dates[a] ?? -Infinity;
+      const tsB = dates[b] ?? -Infinity;
+      if (tsA !== tsB) return tsB - tsA;
+      return a.localeCompare(b);
+    });
+  }
+
+  /**
+   * Filters and sorts eligible pending requests by specified order (defaults to oldest first).
+   */
+  eligible(usernames, { includeRetry = false, order = 'oldest' } = {}) {
     const valid = usernames.filter(u => {
       const st = this.checkpoint.statusOf(u);
       if (FINAL.has(st) || st === STATUS.CANCELLED || st === STATUS.ALREADY_CANCELLED || st === STATUS.ACCEPTED || st === STATUS.PROFILE_UNAVAILABLE) {
@@ -44,16 +59,19 @@ export class PendingRequestCancellationEngine extends AutomationController {
       return includeRetry || (st !== STATUS.FAILED && st !== STATUS.NEEDS_REVIEW);
     });
 
-    // Enforce oldest-first priority
-    return this.sortOldestFirst(valid);
+    const isNewest = /new(est)?/i.test(order) || this.processingOrder === 'NEWEST_FIRST';
+    return isNewest ? this.sortNewestFirst(valid) : this.sortOldestFirst(valid);
   }
 
   /**
-   * Starts a cancellation run on selected accounts in oldest-first order.
+   * Starts a cancellation run on selected accounts in specified order (oldest or newest first).
    */
-  async start(usernames, { includeRetry = false } = {}) {
-    // Ensure input is uniquely sorted oldest-first
-    const sorted = this.sortOldestFirst([...new Set(usernames)]);
+  async start(usernames, { includeRetry = false, order = 'oldest' } = {}) {
+    const isNewest = /new(est)?/i.test(order);
+    this.processingOrder = isNewest ? 'NEWEST_FIRST' : 'OLDEST_FIRST';
+    const sorted = isNewest
+      ? this.sortNewestFirst([...new Set(usernames)])
+      : this.sortOldestFirst([...new Set(usernames)]);
     return super.start(sorted, { includeRetry });
   }
 
@@ -66,7 +84,7 @@ export class PendingRequestCancellationEngine extends AutomationController {
     return {
       ...snap,
       job: 'cancel',
-      processingOrder: 'OLDEST_FIRST',
+      processingOrder: this.processingOrder || 'OLDEST_FIRST',
       currentDisplayName: current ? (displayNames[current] || null) : null,
       currentRequestDate: current && dates[current] ? new Date(dates[current]).toISOString() : null
     };

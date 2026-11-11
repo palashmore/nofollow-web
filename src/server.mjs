@@ -24,6 +24,7 @@ import { ProfileSyncService } from './services/profile-sync-service.mjs';
 import { WhitelistService } from './services/whitelist-service.mjs';
 import { ProfileMetadataService } from './services/profile-metadata-service.mjs';
 import { VipScannerEngine } from './automation/vip-scanner.mjs';
+import { LiveRelationshipSyncEngine } from './automation/live-relationship-sync.mjs';
 
 const PORT = Number(process.env.PORT) || 4173;
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -52,6 +53,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     follow: new AutomationController({ ig: session, checkpoint: checkpoints.follow, logger, getSettings: () => settings, job: 'follow', whitelist, profileMeta }),
   };
   const vipScanner = new VipScannerEngine({ ig: session, profileMeta, whitelist, logger, getSettings: () => settings });
+  const liveSync = new LiveRelationshipSyncEngine({ ig: session, accountService: accounts, profileMeta, logger });
   const orchestrator = new CentralJobOrchestrator({
     queueFile: path.join(dataDir, 'central-queue-state.json'),
     auditFile: path.join(dataDir, 'audit-history.json'),
@@ -80,6 +82,8 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
   logger.on('log', e => send('log', e));
   vipScanner.on('state', s => send('vipScanner', s));
   vipScanner.on('scanned', a => send('vipScanned', a));
+  liveSync.on('state', s => send('liveSync', s));
+  liveSync.on('completed', c => { send('liveSyncCompleted', c); send('accounts', accounts.summary()); });
 
   const shownEngine = () => activeEngine() || engines[lastJob];
   const state = async () => ({
@@ -94,6 +98,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     storiesHighlights: storiesHighlights.summary(),
     whitelist: whitelist.list(),
     vipScanner: vipScanner.snapshot(),
+    liveSync: liveSync.snapshot(),
     influencersSummary: profileMeta.summary()
   });
 
@@ -368,6 +373,23 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         });
         return res.end(rows.join('\n'));
       }
+      case 'POST /api/sync/live/start': {
+        const b = JSON.parse((await body(req)) || '{}');
+        const delayMs = +b.delayMs || 350;
+        const maxFollowing = +b.maxFollowing || 0;
+        const maxFollowers = +b.maxFollowers || 0;
+        liveSync.sync({ delayMs, maxFollowing, maxFollowers }).catch(e => {
+          logger.error(`Live sync error: ${e.message}`);
+        });
+        return json(res, 200, { ok: true, message: 'Live relationship sync started.', snapshot: liveSync.snapshot() });
+      }
+      case 'POST /api/sync/live/stop': {
+        liveSync.stop();
+        return json(res, 200, { ok: true, snapshot: liveSync.snapshot() });
+      }
+      case 'GET /api/sync/live/status': {
+        return json(res, 200, liveSync.snapshot());
+      }
       case 'POST /api/settings': {
         const r = validateSettings(JSON.parse(await body(req)), settings);
         if (r.errors.length) return json(res, 400, { error: r.errors.join(' ') });
@@ -505,7 +527,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     }
   });
 
-  return { server, engines, engine: engines.unfollow, checkpoints, checkpoint: checkpoints.unfollow, accounts, logger, session, pairing, orchestrator, postArchive, storiesHighlights, intelligence, profileSync, getSettings: () => settings };
+  return { server, engines, engine: engines.unfollow, checkpoints, checkpoint: checkpoints.unfollow, accounts, logger, session, pairing, orchestrator, postArchive, storiesHighlights, intelligence, profileSync, vipScanner, liveSync, getSettings: () => settings };
 }
 
 const openUrl = url => { if (!process.env.NO_OPEN) exec(`start "" "${url}"`); };

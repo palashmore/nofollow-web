@@ -39,12 +39,14 @@ export class ProfileMetadataService {
     return !!(u && this.state.profiles[u]);
   }
 
-  set(username, { followersCount = null, followersText = null, followingCount = null, followingText = null, authorityRatio = null, isVerified = false, relationship = null } = {}) {
+  set(username, { followersCount = null, followersText = null, followingCount = null, followingText = null, authorityRatio = null, isVerified = false, fullName = null, profilePicUrl = null, relationship = null } = {}) {
     const u = normalizeUsername(username);
     if (!u) return;
     const prev = this.state.profiles[u] || {};
     const fCount = followersCount !== null ? followersCount : (prev.followersCount ?? null);
     const gCount = followingCount !== null ? followingCount : (prev.followingCount ?? null);
+    const fName = fullName !== null ? fullName : (prev.fullName ?? null);
+    const pic = profilePicUrl !== null ? profilePicUrl : (prev.profilePicUrl ?? null);
     let ratio = authorityRatio !== null ? authorityRatio : (prev.authorityRatio ?? null);
     if (ratio === null && fCount !== null) {
       const denom = (gCount && gCount > 0) ? gCount : 1;
@@ -52,6 +54,8 @@ export class ProfileMetadataService {
     }
     this.state.profiles[u] = {
       username: u,
+      fullName: fName,
+      profilePicUrl: pic,
       followersCount: fCount,
       followersText: followersText || prev.followersText || (fCount ? String(fCount) : null),
       followingCount: gCount,

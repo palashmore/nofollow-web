@@ -58,6 +58,7 @@ export function dashboard(el) {
       <a class="quick-pill" href="#/queue">${icon('activity', 14)} Automation Queue</a>
       <a class="quick-pill" href="#/intelligence">${icon('sparkles', 14)} Intelligence</a>
       <a class="quick-pill" href="#/import-data">${icon('upload', 14)} Import &amp; Export</a>
+      <a class="quick-pill" href="#/import-data" style="color:var(--accent);font-weight:600">${icon('zap', 14)} ⚡ Live Browser Sync</a>
     </div>
 
     <!-- Section B: Asymmetric Bento Metrics Layout -->
@@ -593,7 +594,57 @@ export function history(el) {
 const KNOWN = /^(followers(_\d+)?|following|pending_follow_requests|recently_unfollowed_profiles|blocked_profiles|profiles_you've_favorited|restricted_profiles|recent_follow_requests|follow_requests_you've_received|removed_suggestions)\.(json|html)$/i;
 
 export function importView(el) {
-  el.innerHTML = `<h1>Import &amp; Export Tracker</h1><p class="sub">Select the files from your Instagram export folder <code>connections\\followers_and_following</code> (JSON or HTML). <b>Your Protected Whitelist and VIP Scanner data are preserved automatically.</b></p>
+  el.innerHTML = `<h1>Import &amp; Export Tracker</h1><p class="sub">Sync your followers and following directly from your live Instagram browser session, or select export files from <code>connections\\followers_and_following</code>. <b>Your Protected Whitelist and VIP Scanner data are preserved automatically.</b></p>
+
+    <!-- ⚡ Live In-Browser Session Sync (Skip Manual Export) -->
+    <div class="card" style="margin-bottom:24px;border-left:4px solid var(--accent);background:linear-gradient(135deg,var(--surface-1),var(--surface-2))">
+      <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px">
+        <div>
+          <h2 style="display:flex;align-items:center;gap:8px">${icon('zap', 18)} ⚡ Live In-Browser Extraction (Skip Manual Exports!)</h2>
+          <p class="sub" style="margin-bottom:0">Automatically pull your live Followers and Following directly from your active Instagram browser session in seconds. <b>Zero ZIP files, zero manual downloads.</b></p>
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <span class="chip ok">${icon('sparkles', 12)} Direct Session Friendships API</span>
+          <span class="chip">${icon('shield', 12)} Whitelist Preserved</span>
+        </div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0">
+        <label class="field">Pacing Delay (Safety)
+          <select id="live-sync-delay">
+            <option value="250">⚡ Fast (250ms - Quick Sync)</option>
+            <option value="350" selected>🚀 Balanced (350ms - Default)</option>
+            <option value="600">🛡️ Safe Stealth (600ms)</option>
+          </select>
+        </label>
+        <label class="field">Limit / Scope
+          <select id="live-sync-scope">
+            <option value="0" selected>Full List (All accounts)</option>
+            <option value="1000">First 1,000 accounts</option>
+            <option value="2500">First 2,500 accounts</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row" style="gap:10px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn primary" id="btn-live-sync-start">${icon('refresh', 14)} ⚡ Start Live Sync from Instagram</button>
+        <button class="btn danger" id="btn-live-sync-stop" disabled>${icon('ban', 14)} Stop Sync</button>
+      </div>
+
+      <!-- Live Progress Box -->
+      <div id="live-sync-box" style="margin-top:14px;display:none;background:var(--surface-3);padding:12px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+        <div class="row" style="justify-content:space-between;margin-bottom:6px">
+          <span id="live-sync-label" style="font-weight:600">Connecting to browser session...</span>
+          <span class="chip" id="live-sync-chip">0 / 0</span>
+        </div>
+        <div style="background:var(--surface-2);border-radius:999px;height:8px;overflow:hidden">
+          <div id="live-sync-bar" style="background:var(--accent);height:100%;width:0%;transition:width 0.3s"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sep" style="margin:24px 0;text-align:center;font-weight:600;color:var(--muted)">— OR IMPORT OFFLINE INSTAGRAM EXPORT FILES —</div>
+
     <div class="drop" id="drop"><p><b>Drop files here</b> or</p><input type="file" id="files" multiple accept=".json,.html"><p style="margin-bottom:0">Pick <b>followers_1</b> (and followers_2… if present) and <b>following</b>. Other files are optional.</p></div>
     <div id="picked" style="margin-top:14px"></div><div class="row" style="margin-top:14px"><button class="btn primary" id="go" disabled>Import selected files</button></div>
     <div id="diff-box" style="margin-top:18px"></div>
@@ -714,6 +765,103 @@ export function importView(el) {
       toast('Import complete: Whitelist, VIP Scanner data, and Follower Changes tracked', 'ok');
     } catch (e) { toast(e.message, 'err'); } finally { btn.textContent = 'Import selected files'; btn.disabled = false; }
   });
+
+  const updateLiveSyncUI = (snap) => {
+    if (!snap) return;
+    const startBtn = $('#btn-live-sync-start', el);
+    const stopBtn = $('#btn-live-sync-stop', el);
+    const box = $('#live-sync-box', el);
+    const lbl = $('#live-sync-label', el);
+    const chip = $('#live-sync-chip', el);
+    const bar = $('#live-sync-bar', el);
+
+    if (snap.active) {
+      if (startBtn) startBtn.disabled = true;
+      if (stopBtn) stopBtn.disabled = false;
+      if (box) box.style.display = 'block';
+
+      if (snap.phase === 'INIT') {
+        if (lbl) lbl.textContent = 'Resolving logged-in Instagram account & relationship totals...';
+        if (chip) chip.textContent = 'Initializing...';
+        if (bar) bar.style.width = '10%';
+      } else if (snap.phase === 'FOLLOWING') {
+        if (lbl) lbl.textContent = `Extracting Following: ${fmtNum(snap.processedFollowing)} / ${fmtNum(snap.totalFollowing)} accounts`;
+        if (chip) chip.textContent = `${fmtNum(snap.processedFollowing)} / ${fmtNum(snap.totalFollowing)}`;
+        const pct = snap.totalFollowing > 0 ? Math.round((snap.processedFollowing / snap.totalFollowing) * 45) : 25;
+        if (bar) bar.style.width = `${pct}%`;
+      } else if (snap.phase === 'FOLLOWERS') {
+        if (lbl) lbl.textContent = `Extracting Followers: ${fmtNum(snap.processedFollowers)} / ${fmtNum(snap.totalFollowers)} accounts`;
+        if (chip) chip.textContent = `${fmtNum(snap.processedFollowers)} / ${fmtNum(snap.totalFollowers)}`;
+        const pct = snap.totalFollowers > 0 ? 50 + Math.round((snap.processedFollowers / snap.totalFollowers) * 45) : 75;
+        if (bar) bar.style.width = `${pct}%`;
+      } else if (snap.phase === 'INGESTING') {
+        if (lbl) lbl.textContent = 'Calculating relationship sets & Who Unfollowed You diff...';
+        if (chip) chip.textContent = 'Computing diff...';
+        if (bar) bar.style.width = '95%';
+      }
+    } else {
+      if (startBtn) startBtn.disabled = false;
+      if (stopBtn) stopBtn.disabled = true;
+      if (snap.phase === 'COMPLETED') {
+        if (lbl) lbl.textContent = `Live Sync Completed: ${fmtNum(snap.processedFollowing)} following and ${fmtNum(snap.processedFollowers)} followers extracted!`;
+        if (bar) bar.style.width = '100%';
+      } else if (snap.phase === 'FAILED') {
+        if (lbl) lbl.textContent = `Live Sync Failed: ${snap.error || 'Unknown error'}`;
+      }
+    }
+  };
+
+  $('#btn-live-sync-start', el)?.addEventListener('click', async () => {
+    const delayMs = +$('#live-sync-delay', el)?.value || 350;
+    const scope = +$('#live-sync-scope', el)?.value || 0;
+    try {
+      $('#btn-live-sync-start', el).disabled = true;
+      $('#btn-live-sync-stop', el).disabled = false;
+      $('#live-sync-box', el).style.display = 'block';
+      await post('/api/sync/live/start', {
+        delayMs,
+        maxFollowing: scope,
+        maxFollowers: scope
+      });
+      toast('Live relationship sync started in background...', 'ok');
+    } catch (e) {
+      toast(e.message, 'err');
+      $('#btn-live-sync-start', el).disabled = false;
+      $('#btn-live-sync-stop', el).disabled = true;
+    }
+  });
+
+  $('#btn-live-sync-stop', el)?.addEventListener('click', async () => {
+    try {
+      await post('/api/sync/live/stop');
+      toast('Stopping live sync...', 'warn');
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  });
+
+  updateLiveSyncUI(store.data?.liveSync);
+
+  return {
+    onLiveSync: updateLiveSyncUI,
+    onLiveSyncCompleted: (res) => {
+      const s = res?.summary;
+      if (s) {
+        if (s.latestDiff) renderDiff(s.latestDiff);
+        $('#res', el).innerHTML = `
+          <div class="card" style="border-left:4px solid var(--ok);margin-top:16px">
+            <p style="font-size:14px;margin-bottom:8px"><b>${fmtNum(s.totals.following)}</b> following · <b>${fmtNum(s.totals.followers)}</b> followers · <b>${fmtNum(s.totals.nonFollowers)}</b> don't follow back · <b>${fmtNum(s.totals.mutual)}</b> mutual</p>
+            <div class="row" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">
+              <span class="chip ok">⭐ Protected Whitelist: ${fmtNum(s.whitelistCount || 0)} accounts preserved</span>
+              <span class="chip ok">👥 VIP Scanner Intelligence: ${fmtNum(s.scannedProfilesCount || 0)} profiles preserved</span>
+              <span class="chip ok">⚡ Source: Live Instagram Session</span>
+            </div>
+            <div><a class="btn primary" href="#/non-followers">Review non-followers</a></div>
+          </div>`;
+      }
+      toast('Live sync completed: Relationship data and Follower Changes updated!', 'ok');
+    }
+  };
 }
 
 /* ---------------------------------------------------------------- settings */

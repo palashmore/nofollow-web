@@ -99,6 +99,69 @@ export class AccountService {
     return { ...sum, latestDiff: diff };
   }
 
+  /**
+   * Ingest live followers and following extracted directly from the active browser session.
+   * Completely bypasses manual file exports (followers_1.json, following.json).
+   */
+  ingestLiveSync({ following = [], followers = [], displayNames = {}, userMeta = {} }) {
+    const previousModel = this.model;
+    const followingUnique = [...new Set(following.map(u => String(u || '').trim().toLowerCase()).filter(Boolean))];
+    const followersUnique = [...new Set(followers.map(u => String(u || '').trim().toLowerCase()).filter(Boolean))];
+    const fset = new Set(followersUnique);
+    const gset = new Set(followingUnique);
+
+    const mergedDisplayNames = { ...(previousModel?.displayNames || {}), ...displayNames };
+    const pendingList = previousModel?.lists?.pending || [];
+    const recentList = previousModel?.lists?.recent || [];
+    const blockedList = previousModel?.lists?.blocked || [];
+
+    const newModel = {
+      importedAt: new Date().toISOString(),
+      source: 'LIVE_BROWSER_SYNC',
+      files: [{ name: 'live_browser_sync', role: 'live_sync', count: followingUnique.length + followersUnique.length, duplicates: 0 }],
+      warnings: [],
+      duplicates: 0,
+      blocking: false,
+      displayNames: mergedDisplayNames,
+      requestDates: previousModel?.requestDates || {},
+      lists: {
+        following: followingUnique,
+        followers: followersUnique,
+        pending: pendingList,
+        recent: recentList,
+        blocked: blockedList
+      },
+      nonFollowers: followingUnique.filter(u => !fset.has(u)),
+      mutual: followingUnique.filter(u => fset.has(u)),
+      fans: followersUnique.filter(u => !gset.has(u))
+    };
+
+    let diff = null;
+    if (previousModel?.lists?.followers && newModel.lists?.followers) {
+      diff = this.#computeDiff(previousModel, newModel);
+      this.#recordDiff(diff);
+    }
+
+    // Auto-update profile metadata with verified badges and names
+    if (this.profileMeta && userMeta) {
+      for (const [u, meta] of Object.entries(userMeta)) {
+        const existing = this.profileMeta.get(u) || {};
+        this.profileMeta.set(u, {
+          ...existing,
+          isVerified: meta.isVerified ?? existing.isVerified ?? false,
+          fullName: meta.fullName || existing.fullName || mergedDisplayNames[u] || '',
+          profilePicUrl: meta.profilePicUrl || existing.profilePicUrl || null
+        });
+      }
+    }
+
+    this.model = newModel;
+    atomicWriteJson(this.file, this.model);
+    this.#index();
+    const sum = this.summary();
+    return { ...sum, latestDiff: diff };
+  }
+
   summary() {
     const m = this.model; if (!m) return null;
     const L = k => (m.lists[k] || []).length;

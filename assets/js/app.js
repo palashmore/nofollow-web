@@ -124,6 +124,16 @@ function connect() {
     store.view?.onVipAccount?.(a);
     debouncedVipRefresh();
   });
+  es.addEventListener('liveSync', ev => {
+    const s = JSON.parse(ev.data);
+    if (store.data) store.data.liveSync = s;
+    store.view?.onLiveSync?.(s);
+  });
+  es.addEventListener('liveSyncCompleted', async ev => {
+    await refresh();
+    store.view?.onAccounts?.();
+    store.view?.onLiveSyncCompleted?.(JSON.parse(ev.data));
+  });
 }
 
 document.addEventListener('click', async e => {

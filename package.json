@@ -4,6 +4,7 @@
   "description": "Find Instagram accounts that do not follow you back and unfollow them under your control.",
   "scripts": {
     "start": "node unfollow.mjs",
+    "dev": "node unfollow.mjs",
     "test": "node --test --test-concurrency=1 \"tests/*.test.mjs\""
   },
   "type": "module",

@@ -103,27 +103,34 @@ export class AccountService {
    * Ingest live followers and following extracted directly from the active browser session.
    * Completely bypasses manual file exports (followers_1.json, following.json).
    */
-  ingestLiveSync({ following = [], followers = [], displayNames = {}, userMeta = {} }) {
+  ingestLiveSync({ following = [], followers = [], pending = [], displayNames = {}, userMeta = {} }) {
     const previousModel = this.model;
     const followingUnique = [...new Set(following.map(u => String(u || '').trim().toLowerCase()).filter(Boolean))];
     const followersUnique = [...new Set(followers.map(u => String(u || '').trim().toLowerCase()).filter(Boolean))];
+    const pendingInputUnique = [...new Set(pending.map(u => String(u || '').trim().toLowerCase()).filter(Boolean))];
     const fset = new Set(followersUnique);
     const gset = new Set(followingUnique);
 
     const mergedDisplayNames = { ...(previousModel?.displayNames || {}), ...displayNames };
-    const pendingList = previousModel?.lists?.pending || [];
+    const previousPending = previousModel?.lists?.pending || [];
+    const pendingList = [...new Set([...pendingInputUnique, ...previousPending])];
     const recentList = previousModel?.lists?.recent || [];
     const blockedList = previousModel?.lists?.blocked || [];
+
+    const requestDates = { ...(previousModel?.requestDates || {}) };
+    for (const u of pendingInputUnique) {
+      if (!requestDates[u]) requestDates[u] = Date.now();
+    }
 
     const newModel = {
       importedAt: new Date().toISOString(),
       source: 'LIVE_BROWSER_SYNC',
-      files: [{ name: 'live_browser_sync', role: 'live_sync', count: followingUnique.length + followersUnique.length, duplicates: 0 }],
+      files: [{ name: 'live_browser_sync', role: 'live_sync', count: followingUnique.length + followersUnique.length + pendingInputUnique.length, duplicates: 0 }],
       warnings: [],
       duplicates: 0,
       blocking: false,
       displayNames: mergedDisplayNames,
-      requestDates: previousModel?.requestDates || {},
+      requestDates,
       lists: {
         following: followingUnique,
         followers: followersUnique,

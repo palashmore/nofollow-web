@@ -153,6 +153,15 @@ test('LiveRelationshipSyncEngine: paginates following and followers, emits progr
           nextCursor: null
         };
       }
+      // Simulate pending requests
+      if (fn.toString().includes('friendships/pending/')) {
+        return {
+          ok: true,
+          users: [
+            { pk: '99', username: 'pending_user_live', full_name: 'Pending Live', is_verified: false }
+          ]
+        };
+      }
       return { ok: false };
     }
   };
@@ -180,10 +189,12 @@ test('LiveRelationshipSyncEngine: paginates following and followers, emits progr
   assert.ok(result.ok);
   assert.equal(result.followingCount, 3);
   assert.equal(result.followersCount, 2);
+  assert.equal(result.pendingCount, 1);
 
   assert.ok(states.includes('INIT'));
   assert.ok(states.includes('FOLLOWING'));
   assert.ok(states.includes('FOLLOWERS'));
+  assert.ok(states.includes('PENDING'));
   assert.ok(states.includes('INGESTING'));
   assert.ok(states.includes('COMPLETED'));
 
@@ -194,6 +205,9 @@ test('LiveRelationshipSyncEngine: paginates following and followers, emits progr
   assert.deepEqual(accounts.model.nonFollowers, ['user_b', 'user_c']);
   assert.deepEqual(accounts.model.mutual, ['user_a']);
   assert.deepEqual(accounts.model.fans, ['user_d']);
+  // Pending ground truth: live pending + preserved previous pending
+  assert.ok(accounts.model.lists.pending.includes('pending_user_live'));
+  assert.ok(accounts.model.lists.pending.includes('req_1'));
 });
 
 test('REST API: /api/sync/live/start, /api/sync/live/status, /api/sync/live/stop routes', async () => {

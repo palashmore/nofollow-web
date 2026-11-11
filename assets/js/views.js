@@ -601,10 +601,11 @@ export function importView(el) {
       <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px">
         <div>
           <h2 style="display:flex;align-items:center;gap:8px">${icon('zap', 18)} ⚡ Live In-Browser Extraction (Skip Manual Exports!)</h2>
-          <p class="sub" style="margin-bottom:0">Automatically pull your live Followers and Following directly from your active Instagram browser session in seconds. <b>Zero ZIP files, zero manual downloads.</b></p>
+          <p class="sub" style="margin-bottom:0">Automatically pull your live Followers, Following, and Pending Requests directly from your active Instagram browser session in seconds. <b>Zero ZIP files, zero manual downloads.</b></p>
         </div>
         <div class="row" style="gap:8px;flex-wrap:wrap">
           <span class="chip ok">${icon('sparkles', 12)} Direct Session Friendships API</span>
+          <span class="chip ok">${icon('sparkles', 12)} Pending Requests Extraction</span>
           <span class="chip">${icon('shield', 12)} Whitelist Preserved</span>
         </div>
       </div>
@@ -612,9 +613,9 @@ export function importView(el) {
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0">
         <label class="field">Pacing Delay (Safety)
           <select id="live-sync-delay">
-            <option value="250">⚡ Fast (250ms - Quick Sync)</option>
-            <option value="350" selected>🚀 Balanced (350ms - Default)</option>
-            <option value="600">🛡️ Safe Stealth (600ms)</option>
+            <option value="500">⚡ Fast (500ms)</option>
+            <option value="800" selected>🚀 Balanced (800ms - Recommended)</option>
+            <option value="1200">🛡️ Safe Stealth (1200ms)</option>
           </select>
         </label>
         <label class="field">Limit / Scope
@@ -787,13 +788,17 @@ export function importView(el) {
       } else if (snap.phase === 'FOLLOWING') {
         if (lbl) lbl.textContent = `Extracting Following: ${fmtNum(snap.processedFollowing)} / ${fmtNum(snap.totalFollowing)} accounts`;
         if (chip) chip.textContent = `${fmtNum(snap.processedFollowing)} / ${fmtNum(snap.totalFollowing)}`;
-        const pct = snap.totalFollowing > 0 ? Math.round((snap.processedFollowing / snap.totalFollowing) * 45) : 25;
+        const pct = snap.totalFollowing > 0 ? Math.round((snap.processedFollowing / snap.totalFollowing) * 35) : 20;
         if (bar) bar.style.width = `${pct}%`;
       } else if (snap.phase === 'FOLLOWERS') {
         if (lbl) lbl.textContent = `Extracting Followers: ${fmtNum(snap.processedFollowers)} / ${fmtNum(snap.totalFollowers)} accounts`;
         if (chip) chip.textContent = `${fmtNum(snap.processedFollowers)} / ${fmtNum(snap.totalFollowers)}`;
-        const pct = snap.totalFollowers > 0 ? 50 + Math.round((snap.processedFollowers / snap.totalFollowers) * 45) : 75;
+        const pct = snap.totalFollowers > 0 ? 35 + Math.round((snap.processedFollowers / snap.totalFollowers) * 45) : 60;
         if (bar) bar.style.width = `${pct}%`;
+      } else if (snap.phase === 'PENDING') {
+        if (lbl) lbl.textContent = `Extracting Pending Requests: ${fmtNum(snap.processedPending || 0)} found`;
+        if (chip) chip.textContent = `${fmtNum(snap.processedPending || 0)} pending`;
+        if (bar) bar.style.width = '85%';
       } else if (snap.phase === 'INGESTING') {
         if (lbl) lbl.textContent = 'Calculating relationship sets & Who Unfollowed You diff...';
         if (chip) chip.textContent = 'Computing diff...';
@@ -803,16 +808,18 @@ export function importView(el) {
       if (startBtn) startBtn.disabled = false;
       if (stopBtn) stopBtn.disabled = true;
       if (snap.phase === 'COMPLETED') {
-        if (lbl) lbl.textContent = `Live Sync Completed: ${fmtNum(snap.processedFollowing)} following and ${fmtNum(snap.processedFollowers)} followers extracted!`;
+        if (lbl) lbl.textContent = `Live Sync Completed: ${fmtNum(snap.processedFollowing)} following, ${fmtNum(snap.processedFollowers)} followers, and ${fmtNum(snap.processedPending || 0)} pending requests extracted!`;
+        if (chip) chip.textContent = 'Completed';
         if (bar) bar.style.width = '100%';
       } else if (snap.phase === 'FAILED') {
         if (lbl) lbl.textContent = `Live Sync Failed: ${snap.error || 'Unknown error'}`;
+        if (chip) chip.textContent = 'Failed';
       }
     }
   };
 
   $('#btn-live-sync-start', el)?.addEventListener('click', async () => {
-    const delayMs = +$('#live-sync-delay', el)?.value || 350;
+    const delayMs = +$('#live-sync-delay', el)?.value || 800;
     const scope = +$('#live-sync-scope', el)?.value || 0;
     try {
       $('#btn-live-sync-start', el).disabled = true;
@@ -850,7 +857,7 @@ export function importView(el) {
         if (s.latestDiff) renderDiff(s.latestDiff);
         $('#res', el).innerHTML = `
           <div class="card" style="border-left:4px solid var(--ok);margin-top:16px">
-            <p style="font-size:14px;margin-bottom:8px"><b>${fmtNum(s.totals.following)}</b> following · <b>${fmtNum(s.totals.followers)}</b> followers · <b>${fmtNum(s.totals.nonFollowers)}</b> don't follow back · <b>${fmtNum(s.totals.mutual)}</b> mutual</p>
+            <p style="font-size:14px;margin-bottom:8px"><b>${fmtNum(s.totals.following)}</b> following · <b>${fmtNum(s.totals.followers)}</b> followers · <b>${fmtNum(s.totals.pending || 0)}</b> pending · <b>${fmtNum(s.totals.nonFollowers)}</b> don't follow back · <b>${fmtNum(s.totals.mutual)}</b> mutual</p>
             <div class="row" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">
               <span class="chip ok">⭐ Protected Whitelist: ${fmtNum(s.whitelistCount || 0)} accounts preserved</span>
               <span class="chip ok">👥 VIP Scanner Intelligence: ${fmtNum(s.scannedProfilesCount || 0)} profiles preserved</span>

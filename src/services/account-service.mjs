@@ -40,6 +40,8 @@ export class AccountService {
     const m = this.model; if (!m) return null;
     const L = k => (m.lists[k] || []).length;
     return { importedAt: m.importedAt, files: m.files, warnings: m.warnings, duplicates: m.duplicates, blocking: m.blocking,
+      whitelistCount: this.whitelist ? this.whitelist.list().length : 0,
+      scannedProfilesCount: this.profileMeta ? (this.profileMeta.summary().totalScanned || 0) : 0,
       totals: { following: L('following'), followers: L('followers'), nonFollowers: m.nonFollowers.length, mutual: m.mutual.length, fans: m.fans.length, pending: L('pending'), recent: L('recent'), blocked: L('blocked') } };
   }
 

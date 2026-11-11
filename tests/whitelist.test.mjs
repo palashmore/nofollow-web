@@ -9,6 +9,8 @@ import { PendingRequestCancellationEngine } from '../src/automation/pending-requ
 import { CheckpointService } from '../src/services/checkpoint-service.mjs';
 import { PendingRequestStateService } from '../src/services/pending-request-state.mjs';
 import { Logger } from '../src/services/logger-service.mjs';
+import { AccountService } from '../src/services/account-service.mjs';
+import { ProfileMetadataService } from '../src/services/profile-metadata-service.mjs';
 import { setup, fake, untilIdle } from './fixtures/engine-helpers.mjs';
 
 test('WhitelistService: basic add, remove, has, toggle, addMany, clear', () => {
@@ -187,3 +189,55 @@ test('Hourly action limit and cooldown tracking in AutomationController snapshot
   assert.equal(snap2.hourlyActions, 1);
   assert.equal(engine.actionTimestamps.length, 1);
 });
+
+test('AccountService: re-importing data preserves Whitelist and Profile Metadata without resetting', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-reimport-'));
+  const importFile = path.join(dir, 'import.json');
+  const wl = new WhitelistService(path.join(dir, 'wl.json'));
+  const meta = new ProfileMetadataService(path.join(dir, 'meta.json'));
+  const cp = { unfollow: new CheckpointService(path.join(dir, 'unfollow.json')), cancel: new CheckpointService(path.join(dir, 'cancel.json')) };
+
+  // Set up initial whitelist and profile metadata
+  wl.add('best_friend');
+  wl.add('favorite_creator');
+  meta.set('favorite_creator', { followersCount: 150000, isVerified: true });
+  meta.set('other_creator', { followersCount: 45000, isVerified: false });
+
+  const svc = new AccountService(importFile, cp, wl, meta);
+
+  // First import
+  svc.addFile('following.json', JSON.stringify({ relationships_following: [{ string_list_data: [{ value: 'best_friend' }, { value: 'favorite_creator' }] }] }));
+  svc.addFile('followers_1.json', JSON.stringify([{ string_list_data: [{ value: 'best_friend' }] }]));
+  const sum1 = svc.commit();
+
+  assert.equal(wl.has('best_friend'), true);
+  assert.equal(wl.has('favorite_creator'), true);
+  assert.equal(meta.get('favorite_creator').followersCount, 150000);
+  assert.equal(meta.get('favorite_creator').isVerified, true);
+  assert.equal(sum1.whitelistCount, 2);
+  assert.equal(sum1.scannedProfilesCount, 2);
+
+  // Second import (updated export weeks later for the same user with additional followers)
+  svc.addFile('following.json', JSON.stringify({ relationships_following: [{ string_list_data: [{ value: 'best_friend' }, { value: 'favorite_creator' }, { value: 'new_follow' }] }] }));
+  svc.addFile('followers_1.json', JSON.stringify([{ string_list_data: [{ value: 'best_friend' }, { value: 'new_follow' }] }]));
+  const sum2 = svc.commit();
+
+  // Verify Whitelist is still 100% intact
+  assert.equal(wl.has('best_friend'), true);
+  assert.equal(wl.has('favorite_creator'), true);
+  assert.equal(sum2.whitelistCount, 2);
+
+  // Verify Scanner details are still 100% intact
+  assert.equal(meta.get('favorite_creator').followersCount, 150000);
+  assert.equal(meta.get('favorite_creator').isVerified, true);
+  assert.equal(meta.get('other_creator').followersCount, 45000);
+  assert.equal(sum2.scannedProfilesCount, 2);
+
+  // Verify query reflects both whitelist and metadata on the new model
+  const res = svc.query({ list: 'following' });
+  const fav = res.rows.find(r => r.username === 'favorite_creator');
+  assert.equal(fav.whitelisted, true);
+  assert.equal(fav.followersCount, 150000);
+  assert.equal(fav.isVerified, true);
+});
+

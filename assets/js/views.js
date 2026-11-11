@@ -542,7 +542,7 @@ export function history(el) {
 const KNOWN = /^(followers(_\d+)?|following|pending_follow_requests|recently_unfollowed_profiles|blocked_profiles|profiles_you've_favorited|restricted_profiles|recent_follow_requests|follow_requests_you've_received|removed_suggestions)\.(json|html)$/i;
 
 export function importView(el) {
-  el.innerHTML = `<h1>Import data</h1><p class="sub">Select the files from your Instagram export folder <code>connections\\followers_and_following</code> (JSON or HTML).</p>
+  el.innerHTML = `<h1>Import data</h1><p class="sub">Select the files from your Instagram export folder <code>connections\\followers_and_following</code> (JSON or HTML). <b>Your Protected Whitelist and VIP Scanner data are preserved automatically.</b></p>
     <div class="drop" id="drop"><p><b>Drop files here</b> or</p><input type="file" id="files" multiple accept=".json,.html"><p style="margin-bottom:0">Pick <b>followers_1</b> (and followers_2… if present) and <b>following</b>. Other files are optional.</p></div>
     <div id="picked" style="margin-top:14px"></div><div class="row" style="margin-top:14px"><button class="btn primary" id="go" disabled>Import selected files</button></div><div id="res" style="margin-top:18px"></div>`;
   let files = [];
@@ -563,9 +563,15 @@ export function importView(el) {
       const s = await post('/api/import/commit');
       await hooks.refresh();
       $('#res', el).innerHTML = `${s.warnings.map(w => `<div class="notice ${/INCOMPLETE|No followers|No following/.test(w) ? 'bad' : ''}">${esc(w)}</div>`).join('') || '<div class="notice ok">Export looks complete.</div>'}
-        <div class="card"><b>${fmtNum(s.totals.following)}</b> following · <b>${fmtNum(s.totals.followers)}</b> followers · <b>${fmtNum(s.totals.nonFollowers)}</b> don't follow back · <b>${fmtNum(s.totals.mutual)}</b> mutual
-        <div style="margin-top:12px"><a class="btn primary" href="#/non-followers">Review non-followers</a></div></div>`;
-      toast('Import complete', 'ok');
+        <div class="card">
+          <p style="font-size:14px;margin-bottom:8px"><b>${fmtNum(s.totals.following)}</b> following · <b>${fmtNum(s.totals.followers)}</b> followers · <b>${fmtNum(s.totals.nonFollowers)}</b> don't follow back · <b>${fmtNum(s.totals.mutual)}</b> mutual</p>
+          <div class="row" style="gap:8px;margin-bottom:12px;flex-wrap:wrap">
+            <span class="chip ok">⭐ Protected Whitelist: ${fmtNum(s.whitelistCount || 0)} accounts preserved</span>
+            <span class="chip ok">👥 VIP Scanner Intelligence: ${fmtNum(s.scannedProfilesCount || 0)} profiles preserved</span>
+          </div>
+          <div><a class="btn primary" href="#/non-followers">Review non-followers</a></div>
+        </div>`;
+      toast('Import complete: Whitelist and VIP Scanner data preserved', 'ok');
     } catch (e) { toast(e.message, 'err'); } finally { btn.textContent = 'Import selected files'; btn.disabled = false; }
   });
 }

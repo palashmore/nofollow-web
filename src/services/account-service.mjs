@@ -1,15 +1,18 @@
+import path from 'path';
 import { parseExportFile, buildModel } from './export-parser.mjs';
 import { atomicWriteJson, readJson } from '../utils/file-manager.mjs';
 import { STATUS } from '../utils/constants.mjs';
 
 const requestStatus = st => ({ PENDING: 'Pending', RETRY_PENDING: 'Pending', IN_PROGRESS: 'Pending', PAUSED: 'Pending', ACTION_BLOCKED: 'Pending', CANCELLED: 'Cancelled', ALREADY_CANCELLED: 'Cancelled', ACCEPTED: 'Accepted', PROFILE_UNAVAILABLE: 'Unavailable' }[st] || 'Unknown');
-const LISTS = ['nonFollowers', 'followers', 'following', 'mutual', 'fans', 'pending', 'incoming', 'recent', 'blocked', 'favorites', 'restricted', 'recentRequests', 'requestsReceived', 'removedSuggestions'];
+const LISTS = ['nonFollowers', 'followers', 'following', 'mutual', 'fans', 'pending', 'incoming', 'recent', 'blocked', 'favorites', 'restricted', 'recentRequests', 'requestsReceived', 'removedSuggestions', 'diffLost', 'diffGained', 'diffStillFollowing', 'ghostFollowers'];
 
 /** Holds the imported export (persisted, so a restart needs no re-import) and answers table queries. */
 export class AccountService {
   /** checkpoints = { unfollow, cancel }: the pending-requests list reads the cancel checkpoint, every other list the unfollow one. */
   constructor(file, checkpoints, whitelist = null, profileMeta = null) {
     this.file = file; this.cps = checkpoints; this.whitelist = whitelist; this.profileMeta = profileMeta; this.incoming = [];
+    this.diffFile = path.join(path.dirname(file), 'export-diff-history.json');
+    this.diffHistory = readJson(this.diffFile, []);
     this.model = readJson(file, null);
     this.#index();
   }
@@ -27,13 +30,73 @@ export class AccountService {
     return { name, role: p.role, count: p.usernames.length, malformed: p.malformed, duplicates: p.duplicates };
   }
 
+  #computeDiff(oldModel, newModel) {
+    const oldFollowers = new Set(oldModel.lists?.followers || []);
+    const newFollowers = new Set(newModel.lists?.followers || []);
+    const oldFollowing = new Set(oldModel.lists?.following || []);
+    const newFollowing = new Set(newModel.lists?.following || []);
+
+    const lostFollowers = [...oldFollowers].filter(u => !newFollowers.has(u));
+    const gainedFollowers = [...newFollowers].filter(u => !oldFollowers.has(u));
+    const unfollowedByYou = [...oldFollowing].filter(u => !newFollowing.has(u));
+    const newFollowingList = [...newFollowing].filter(u => !oldFollowing.has(u));
+    const stillFollowingLost = lostFollowers.filter(u => newFollowing.has(u));
+
+    return {
+      timestamp: new Date().toISOString(),
+      previousImportAt: oldModel.importedAt || null,
+      newImportAt: newModel.importedAt,
+      lostFollowers,
+      gainedFollowers,
+      unfollowedByYou,
+      newFollowing: newFollowingList,
+      stillFollowingLost,
+      stats: {
+        lostCount: lostFollowers.length,
+        gainedCount: gainedFollowers.length,
+        unfollowedByYouCount: unfollowedByYou.length,
+        newFollowingCount: newFollowingList.length,
+        stillFollowingLostCount: stillFollowingLost.length,
+        netFollowerChange: gainedFollowers.length - lostFollowers.length,
+      }
+    };
+  }
+
+  #recordDiff(diff) {
+    if (!diff) return;
+    this.diffHistory = [diff, ...(this.diffHistory || [])].slice(0, 50);
+    atomicWriteJson(this.diffFile, this.diffHistory);
+  }
+
+  getLatestDiff() {
+    return this.diffHistory?.[0] || null;
+  }
+
+  getDiffHistory() {
+    return this.diffHistory || [];
+  }
+
+  clearDiffHistory() {
+    this.diffHistory = [];
+    atomicWriteJson(this.diffFile, this.diffHistory);
+    return { ok: true };
+  }
+
   commit() {
     if (!this.incoming.length) throw new Error('No files were uploaded.');
-    this.model = { ...buildModel(this.incoming), importedAt: new Date().toISOString() };
+    const previousModel = this.model;
+    const newModel = { ...buildModel(this.incoming), importedAt: new Date().toISOString() };
+    let diff = null;
+    if (previousModel?.lists?.followers && newModel.lists?.followers) {
+      diff = this.#computeDiff(previousModel, newModel);
+      this.#recordDiff(diff);
+    }
+    this.model = newModel;
     this.incoming = [];
     atomicWriteJson(this.file, this.model);
     this.#index();
-    return this.summary();
+    const sum = this.summary();
+    return { ...sum, latestDiff: diff };
   }
 
   summary() {
@@ -42,12 +105,22 @@ export class AccountService {
     return { importedAt: m.importedAt, files: m.files, warnings: m.warnings, duplicates: m.duplicates, blocking: m.blocking,
       whitelistCount: this.whitelist ? this.whitelist.list().length : 0,
       scannedProfilesCount: this.profileMeta ? (this.profileMeta.summary().totalScanned || 0) : 0,
+      latestDiff: this.getLatestDiff(),
       totals: { following: L('following'), followers: L('followers'), nonFollowers: m.nonFollowers.length, mutual: m.mutual.length, fans: m.fans.length, pending: L('pending'), recent: L('recent'), blocked: L('blocked') } };
   }
 
   list(key) {
     const m = this.model; if (!m || !LISTS.includes(key)) return [];
     if (key === 'incoming') return m.lists.requestsReceived || [];
+    if (key === 'diffLost') return this.getLatestDiff()?.lostFollowers || [];
+    if (key === 'diffGained') return this.getLatestDiff()?.gainedFollowers || [];
+    if (key === 'diffStillFollowing') return this.getLatestDiff()?.stillFollowingLost || [];
+    if (key === 'ghostFollowers') {
+      return (m.lists.followers || []).filter(u => {
+        const meta = this.profileMeta?.get(u);
+        return meta && (((meta.followingCount || 0) > 1500) || (meta.authorityRatio != null && meta.authorityRatio < 0.05 && (meta.followersCount || 0) < 100));
+      });
+    }
     return key === 'nonFollowers' || key === 'mutual' || key === 'fans' ? m[key] : (m.lists[key] || []);
   }
 
@@ -66,6 +139,7 @@ export class AccountService {
       const st = a?.status || STATUS.PENDING;
       const displayName = this.model?.displayNames?.[u] || null;
       const meta = this.profileMeta?.get(u);
+      const isGhostFollower = ((meta?.followingCount || 0) > 1500) || (meta?.authorityRatio != null && meta.authorityRatio < 0.05 && (meta?.followersCount || 0) < 100);
       return {
         username: u,
         displayName,
@@ -80,6 +154,7 @@ export class AccountService {
         followingCount: meta?.followingCount ?? null,
         followingText: meta?.followingText ?? null,
         authorityRatio: meta?.authorityRatio ?? null,
+        isGhostFollower,
         lastAttemptAt: a?.lastAttemptAt || null,
         reason: a?.reason || null,
         screenshot: a?.screenshot || null,
@@ -99,6 +174,14 @@ export class AccountService {
       rows = rows.filter(r => (r.followersCount || 0) >= 50000);
     } else if (status === 'HIGH_AUTHORITY') {
       rows = rows.filter(r => (r.authorityRatio || 0) >= 10);
+    } else if (status === 'GHOST_FOLLOWER') {
+      rows = rows.filter(r => r.isGhostFollower);
+    } else if (status === 'UNFOLLOWED_YOU') {
+      const lost = new Set(this.getLatestDiff()?.lostFollowers || []);
+      rows = rows.filter(r => lost.has(r.username));
+    } else if (status === 'NEW_FOLLOWER') {
+      const gained = new Set(this.getLatestDiff()?.gainedFollowers || []);
+      rows = rows.filter(r => gained.has(r.username));
     } else if (status) {
       rows = rows.filter(r => r.status === status);
     }
@@ -154,6 +237,8 @@ export class AccountService {
       followers: t.followers || 0,
       nonFollowers: t.nonFollowers || 0,
       mutual: t.mutual || 0,
+      ghostFollowers: this.list('ghostFollowers').length,
+      diff: this.getLatestDiff()?.stats || null,
       alreadyUnfollowed: c.ALREADY_UNFOLLOWED,
       unfollowed: c.UNFOLLOWED,
       pendingReview: c.NEEDS_REVIEW,

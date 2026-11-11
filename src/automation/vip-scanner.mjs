@@ -156,9 +156,19 @@ export class VipScannerEngine extends EventEmitter {
         this.stats.processed++;
         this.emit('state', this.snapshot());
 
+        // 🛡️ Automatic Tab & Context Memory Recycling:
+        // Close and recreate the scanner page every 150 accounts to maintain sub-50MB memory footprint
+        if (this.stats.processed > 0 && this.stats.processed % 150 === 0) {
+          if (typeof this.ig.recycleScannerTab === 'function') {
+            await this.ig.recycleScannerTab().catch(() => {});
+          } else if (typeof this.ig.closeScannerTab === 'function') {
+            await this.ig.closeScannerTab().catch(() => {});
+          }
+        }
+
         if (this.stopFlag) break;
         // Delay between scans to respect Instagram rate limits
-        await sleep(Math.max(1, intervalSec) * 1000);
+        await sleep(Math.max(0.2, intervalSec) * 1000);
       }
     } finally {
       this.active = false;

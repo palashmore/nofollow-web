@@ -265,6 +265,9 @@ export const tableView = cfg => el => {
         <option value="HIGH_AUTHORITY" ${st.status === 'HIGH_AUTHORITY' ? 'selected' : ''}>👑 High Authority (Ratio &gt; 10x)</option>
         <option value="ABOVE_10K" ${st.status === 'ABOVE_10K' ? 'selected' : ''}>🔥 Followers &gt; 10K</option>
         <option value="ABOVE_50K" ${st.status === 'ABOVE_50K' ? 'selected' : ''}>🌟 Mega Influencers &gt; 50K</option>
+        <option value="UNFOLLOWED_YOU" ${st.status === 'UNFOLLOWED_YOU' ? 'selected' : ''}>🚨 Unfollowed You (Export Diff)</option>
+        <option value="NEW_FOLLOWER" ${st.status === 'NEW_FOLLOWER' ? 'selected' : ''}>🎉 New Followers (Export Diff)</option>
+        <option value="GHOST_FOLLOWER" ${st.status === 'GHOST_FOLLOWER' ? 'selected' : ''}>👻 Suspected Ghost Followers</option>
         ${statuses.map(s => `<option value="${s}" ${st.status === s ? 'selected' : ''}>${label(s)}</option>`).join('')}
       </select>
       ${requests ? `<select id="age-sel" aria-label="Retention Policy">
@@ -356,10 +359,11 @@ export const tableView = cfg => el => {
         const verifiedBadge = r.isVerified ? `<span class="chip" style="color:#0284c7;border-color:rgba(2,132,199,0.3);background:rgba(2,132,199,0.08);padding:1px 5px;font-size:10px;margin-left:3px" title="Verified Creator (Blue Tick)">🔵 Verified</span>` : '';
         const followersBadge = (r.followersText || r.followersCount) ? `<span class="chip" style="padding:1px 5px;font-size:10px;margin-left:3px" title="${fmtNum(r.followersCount)} followers">👥 ${esc(r.followersText || (r.followersCount >= 1e6 ? (r.followersCount/1e6).toFixed(1)+'M' : r.followersCount >= 1e3 ? (r.followersCount/1e3).toFixed(1)+'K' : r.followersCount))}</span>` : '';
         const authorityBadge = (r.authorityRatio && r.authorityRatio > 0) ? `<span class="chip ${r.authorityRatio >= 10 ? 'ok' : ''}" style="padding:1px 5px;font-size:10px;margin-left:3px;${r.authorityRatio >= 10 ? 'font-weight:bold;border-color:gold;' : ''}" title="Authority Ratio: ${r.authorityRatio.toFixed(1)}x">👑 ${r.authorityRatio.toFixed(1)}x</span>` : '';
+        const ghostBadge = r.isGhostFollower ? `<span class="chip" style="color:#eab308;border-color:rgba(234,179,8,0.3);background:rgba(234,179,8,0.08);padding:1px 5px;font-size:10px;margin-left:3px" title="Suspected Ghost Follower (Mass-following >1.5K or bot ratio)">👻 Ghost</span>` : '';
         return `<tr>
         ${selectable ? `<td><input type="checkbox" data-u="${esc(r.username)}" ${sel.has(r.username) ? 'checked' : ''} aria-label="Select ${esc(r.username)}"></td>` : ''}
         ${requests ? `
-          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${verifiedBadge}${followersBadge}${authorityBadge}${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:3px">⭐ Protected</span>` : ''}</td>
+          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${verifiedBadge}${followersBadge}${authorityBadge}${ghostBadge}${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:3px">⭐ Protected</span>` : ''}</td>
           <td>${esc(r.displayName || '—')}</td>
           <td class="muted">${fmtDate(r.requestedAt)}</td>
           <td><span class="chip" title="${esc(r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '')}">${formatAge(r.requestedAt)}</span></td>
@@ -370,7 +374,7 @@ export const tableView = cfg => el => {
               <a class="btn sm ghost" href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">Open</a>
               ${r.reason || r.screenshot ? `<button class="btn sm ghost" data-i="${esc(r.username)}">Inspect</button>` : ''}</td>
         ` : `
-          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${verifiedBadge}${followersBadge}${authorityBadge}${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:3px">⭐ Protected</span>` : ''}</td>
+          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${verifiedBadge}${followersBadge}${authorityBadge}${ghostBadge}${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:3px">⭐ Protected</span>` : ''}</td>
           <td>${esc(r.relationship)}</td><td class="muted">${esc(r.accountStatus)}</td><td>${badge(r.status)}</td>
           <td class="muted">${fmtDate(r.lastAttemptAt)}</td>
           <td>
@@ -589,9 +593,11 @@ export function history(el) {
 const KNOWN = /^(followers(_\d+)?|following|pending_follow_requests|recently_unfollowed_profiles|blocked_profiles|profiles_you've_favorited|restricted_profiles|recent_follow_requests|follow_requests_you've_received|removed_suggestions)\.(json|html)$/i;
 
 export function importView(el) {
-  el.innerHTML = `<h1>Import data</h1><p class="sub">Select the files from your Instagram export folder <code>connections\\followers_and_following</code> (JSON or HTML). <b>Your Protected Whitelist and VIP Scanner data are preserved automatically.</b></p>
+  el.innerHTML = `<h1>Import &amp; Export Tracker</h1><p class="sub">Select the files from your Instagram export folder <code>connections\\followers_and_following</code> (JSON or HTML). <b>Your Protected Whitelist and VIP Scanner data are preserved automatically.</b></p>
     <div class="drop" id="drop"><p><b>Drop files here</b> or</p><input type="file" id="files" multiple accept=".json,.html"><p style="margin-bottom:0">Pick <b>followers_1</b> (and followers_2… if present) and <b>following</b>. Other files are optional.</p></div>
-    <div id="picked" style="margin-top:14px"></div><div class="row" style="margin-top:14px"><button class="btn primary" id="go" disabled>Import selected files</button></div><div id="res" style="margin-top:18px"></div>`;
+    <div id="picked" style="margin-top:14px"></div><div class="row" style="margin-top:14px"><button class="btn primary" id="go" disabled>Import selected files</button></div>
+    <div id="diff-box" style="margin-top:18px"></div>
+    <div id="res" style="margin-top:18px"></div>`;
   let files = [];
   const pick = list => {
     files = [...list]; const ok = files.filter(f => KNOWN.test(f.name));
@@ -603,12 +609,99 @@ export function importView(el) {
   drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('over'));
   drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); pick(e.dataTransfer.files); });
+
+  const renderDiff = (diff) => {
+    const box = $('#diff-box', el);
+    if (!box) return;
+    if (!diff || !diff.stats) {
+      box.innerHTML = '';
+      return;
+    }
+    const st = diff.stats;
+    const netClass = st.netFollowerChange > 0 ? 'color:var(--ok)' : st.netFollowerChange < 0 ? 'color:var(--bad)' : '';
+    const netSign = st.netFollowerChange > 0 ? '+' : '';
+
+    box.innerHTML = `
+      <div class="card" style="border-left:4px solid var(--accent);margin-bottom:18px">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+          <h2>🚨 "Who Unfollowed Me" &amp; Follower Changes</h2>
+          <span class="chip ok">Export Difference Engine</span>
+        </div>
+        <p class="sub" style="margin-bottom:14px">Detected automatically by comparing your new export (${fmtDate(diff.newImportAt)}) against your previous export (${fmtDate(diff.previousImportAt)}):</p>
+        <div class="grid kpis" style="margin-bottom:16px">
+          ${kpiCard('🚨 Unfollowed You', st.lostCount, 'diff-kpi-lost')}
+          ${kpiCard('🎉 New Followers', st.gainedCount, 'diff-kpi-gained')}
+          ${kpiCard('👥 You Unfollowed', st.unfollowedByYouCount, 'diff-kpi-unf')}
+          <div class="card kpi"><div class="label">📈 Net Follower Growth</div><div class="value" style="${netClass}">${netSign}${fmtNum(st.netFollowerChange)}</div></div>
+        </div>
+
+        <div class="row" style="gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          ${st.stillFollowingLostCount > 0 ? `<button class="btn danger" id="btn-diff-unfollow-lost">${icon('userx', 14)} ⚡ Unfollow People Who Unfollowed You (${fmtNum(st.stillFollowingLostCount)})</button>` : ''}
+          ${st.gainedCount > 0 ? `<button class="btn primary-ghost" id="btn-diff-whitelist-new">${icon('shield', 14)} ⭐ Whitelist All New Followers (${fmtNum(st.gainedCount)})</button>` : ''}
+          <a class="btn ghost" href="/api/export/diff/csv" download="who-unfollowed-me-diff.csv">${icon('download', 14)} Download Diff CSV</a>
+          <a class="btn ghost" href="#/followers?status=UNFOLLOWED_YOU">${icon('users', 14)} View Lost Followers in Table</a>
+        </div>
+
+        ${diff.lostFollowers?.length ? `
+          <div style="margin-top:12px">
+            <h3 style="font-size:13.5px;margin-bottom:8px">Accounts that unfollowed you (${fmtNum(diff.lostFollowers.length)}):</h3>
+            <div class="row" style="gap:6px;flex-wrap:wrap;max-height:160px;overflow-y:auto;padding:8px;background:var(--surface-2);border-radius:var(--radius-sm)">
+              ${diff.lostFollowers.map(u => `
+                <span class="chip" style="font-size:12px">
+                  <a href="https://www.instagram.com/${esc(u)}/" target="_blank" rel="noopener noreferrer">@${esc(u)}</a>
+                  ${diff.stillFollowingLost?.includes(u) ? `<span style="color:var(--bad);margin-left:4px" title="You still follow them!">(you follow)</span>` : ''}
+                </span>
+              `).join('')}
+            </div>
+          </div>
+        ` : '<p class="muted" style="margin-top:8px">No lost followers detected between these exports.</p>'}
+      </div>
+    `;
+
+    const btnUnfollowLost = $('#btn-diff-unfollow-lost', el);
+    if (btnUnfollowLost) {
+      btnUnfollowLost.addEventListener('click', async () => {
+        if (!await confirmModal({
+          title: `Unfollow ${st.stillFollowingLostCount} accounts that unfollowed you?`,
+          danger: true,
+          confirmText: `Confirm Unfollow (${st.stillFollowingLostCount})`,
+          body: `<p>These <b>${st.stillFollowingLostCount}</b> accounts were in your followers list previously, but are no longer following you. You still follow them.</p><p>Accounts in your Protected Whitelist will not be touched.</p>`
+        })) return;
+        try {
+          await post('/api/run/start', { mode: 'unfollow', list: 'diffStillFollowing', confirm: true });
+          toast(`Started unfollowing ${st.stillFollowingLostCount} accounts who unfollowed you`, 'ok');
+          await hooks.refresh();
+        } catch (e) {
+          toast(e.message, 'err');
+        }
+      });
+    }
+
+    const btnWlNew = $('#btn-diff-whitelist-new', el);
+    if (btnWlNew) {
+      btnWlNew.addEventListener('click', async () => {
+        try {
+          const res = await post('/api/whitelist/add', { usernames: diff.gainedFollowers });
+          toast(`⭐ Protected ${fmtNum(res.addedCount || diff.gainedFollowers.length)} new followers in Whitelist`, 'ok');
+          await hooks.refresh();
+        } catch (e) {
+          toast(e.message, 'err');
+        }
+      });
+    }
+  };
+
+  api('/api/export/diff').then(d => {
+    if (d?.latest) renderDiff(d.latest);
+  }).catch(() => {});
+
   $('#go', el).addEventListener('click', async () => {
     const btn = $('#go', el); btn.disabled = true; btn.textContent = 'Importing…';
     try {
       for (const f of files.filter(f => KNOWN.test(f.name))) await api(`/api/import/file?name=${encodeURIComponent(f.name)}`, { method: 'POST', body: await f.text() });
       const s = await post('/api/import/commit');
       await hooks.refresh();
+      if (s.latestDiff) renderDiff(s.latestDiff);
       $('#res', el).innerHTML = `${s.warnings.map(w => `<div class="notice ${/INCOMPLETE|No followers|No following/.test(w) ? 'bad' : ''}">${esc(w)}</div>`).join('') || '<div class="notice ok">Export looks complete.</div>'}
         <div class="card">
           <p style="font-size:14px;margin-bottom:8px"><b>${fmtNum(s.totals.following)}</b> following · <b>${fmtNum(s.totals.followers)}</b> followers · <b>${fmtNum(s.totals.nonFollowers)}</b> don't follow back · <b>${fmtNum(s.totals.mutual)}</b> mutual</p>
@@ -618,7 +711,7 @@ export function importView(el) {
           </div>
           <div><a class="btn primary" href="#/non-followers">Review non-followers</a></div>
         </div>`;
-      toast('Import complete: Whitelist and VIP Scanner data preserved', 'ok');
+      toast('Import complete: Whitelist, VIP Scanner data, and Follower Changes tracked', 'ok');
     } catch (e) { toast(e.message, 'err'); } finally { btn.textContent = 'Import selected files'; btn.disabled = false; }
   });
 }
@@ -798,6 +891,7 @@ export function intelligenceView(el) {
           kpiCard('Mutual Followers', s.mutual) +
           kpiCard('Loyal Fans', s.fans) +
           kpiCard("Don't Follow Back", s.nonFollowers) +
+          kpiCard('Ghost Followers', s.ghostFollowers || 0, 'k-ghost') +
           kpiCard('Pending Requests Sent', s.pendingSent) +
           kpiCard('Account Health', d.healthGrade);
       }
@@ -807,7 +901,9 @@ export function intelligenceView(el) {
           <div><b>Follow-Back Conversion:</b> ${d.ratios.followBackPercentage}% (Mutual / Following)</div>
           <div><b>Fan Loyalty Ratio:</b> ${d.ratios.fanPercentage}% (Fans / Followers)</div>
           <div><b>Non-Follower Ratio:</b> ${d.ratios.nonFollowerPercentage}% (Unreciprocated / Following)</div>
+          <div><b>Ghost Follower Ratio:</b> ${d.ratios.ghostFollowerPercentage || 0}% (Suspected inattentive/bot accounts)</div>
           <div><b>Follower Health Ratio:</b> ${d.ratios.followerHealthRatio}x (Followers / Following)</div>
+          ${s.diff ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)"><b>Latest Export Changes:</b> 🚨 ${s.diff.lostCount} lost, 🎉 ${s.diff.gainedCount} gained (${s.diff.netFollowerChange >= 0 ? '+' : ''}${s.diff.netFollowerChange} net)</div>` : ''}
         `;
       }
       const years = $('#intel-years', el);
@@ -1435,8 +1531,16 @@ export function vipInfluencerView(el) {
 
     <!-- Scanner Control Card -->
     <div class="card" style="margin-bottom:20px">
-      <h2>Profile Scanner Controls</h2>
-      <p class="sub">Select which list to inspect. The browser visits each profile in the background, extracts follower counts and verification badges, and optionally protects them.</p>
+      <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:10px">
+        <div>
+          <h2>Profile Scanner Controls</h2>
+          <p class="sub" style="margin-bottom:0">Select which list to inspect. The scanner extracts follower counts, authority ratios, and verification badges in the background.</p>
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <span class="chip ok" style="padding:3px 8px;font-size:11px" title="Pre-flights Instagram's user endpoint directly in ~150ms">${icon('sparkles', 12)} ⚡ Direct Web API (150ms)</span>
+          <span class="chip" style="padding:3px 8px;font-size:11px" title="Scanner page automatically recycles every 150 accounts to keep memory under 50MB">${icon('shield', 12)} 🛡️ Memory Recycled (150/tab)</span>
+        </div>
+      </div>
 
       <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0">
         <label class="field">Source List
@@ -1456,6 +1560,7 @@ export function vipInfluencerView(el) {
         </label>
         <label class="field">Scan Delay (Speed)
           <select id="vip-interval">
+            <option value="0.5">⚡⚡ Direct API Hyper (0.5s / ~120/min)</option>
             <option value="1.5">⚡ Turbo (1.5 seconds)</option>
             <option value="3" selected>🚀 Fast (3 seconds - Default)</option>
             <option value="5">Balanced (5 seconds)</option>

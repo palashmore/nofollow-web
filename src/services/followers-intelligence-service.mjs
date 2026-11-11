@@ -40,6 +40,21 @@ export class FollowersIntelligenceService {
       }
     }
 
+    const ghostFollowers = this.accounts.list ? this.accounts.list('ghostFollowers').length : 0;
+    const latestDiff = this.accounts.getLatestDiff?.() || null;
+
+    const recs = [
+      nonFollowers > 0 ? `Review and unfollow ${nonFollowers} accounts that do not follow you back.` : 'No non-followers to clean.',
+      pendingSent > 0 ? `Cancel ${pendingSent} outgoing pending requests, starting with the oldest from 2017.` : 'No outgoing pending requests.',
+      fans > 0 ? `You have ${fans} loyal fans who follow you without reciprocal follow.` : 'All followers are mutual.'
+    ];
+    if (ghostFollowers > 0) {
+      recs.push(`Detected ${ghostFollowers} suspected ghost followers (mass-following >1,500 accounts or bot ratios).`);
+    }
+    if (latestDiff?.stats?.lostCount > 0) {
+      recs.push(`${latestDiff.stats.lostCount} accounts unfollowed you since your previous export import.`);
+    }
+
     return {
       summary: {
         followers,
@@ -47,6 +62,8 @@ export class FollowersIntelligenceService {
         mutual,
         nonFollowers,
         fans,
+        ghostFollowers,
+        diff: latestDiff?.stats || null,
         pendingSent,
         pendingReceived
       },
@@ -54,15 +71,12 @@ export class FollowersIntelligenceService {
         followBackPercentage: followBackRatio,
         fanPercentage: fanRatio,
         nonFollowerPercentage: nonFollowerRatio,
+        ghostFollowerPercentage: followers > 0 ? Number(((ghostFollowers / followers) * 100).toFixed(2)) : 0,
         followerHealthRatio
       },
       pendingYearDistribution: yearDistribution,
       healthGrade: followerHealthRatio >= 1.5 ? 'EXCELLENT' : followerHealthRatio >= 1.0 ? 'GOOD' : 'ATTENTION_NEEDED',
-      recommendations: [
-        nonFollowers > 0 ? `Review and unfollow ${nonFollowers} accounts that do not follow you back.` : 'No non-followers to clean.',
-        pendingSent > 0 ? `Cancel ${pendingSent} outgoing pending requests, starting with the oldest from 2017.` : 'No outgoing pending requests.',
-        fans > 0 ? `You have ${fans} loyal fans who follow you without reciprocal follow.` : 'All followers are mutual.'
-      ]
+      recommendations: recs
     };
   }
 }

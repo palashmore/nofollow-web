@@ -343,6 +343,31 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         return json(res, 200, accounts.addFile(path.basename(name), await body(req)));
       }
       case 'POST /api/import/commit': return json(res, 200, accounts.commit());
+      case 'GET /api/export/diff': {
+        return json(res, 200, {
+          latest: accounts.getLatestDiff(),
+          history: accounts.getDiffHistory()
+        });
+      }
+      case 'POST /api/export/diff/clear': {
+        return json(res, 200, accounts.clearDiffHistory());
+      }
+      case 'GET /api/export/diff/csv': {
+        const diff = accounts.getLatestDiff();
+        if (!diff) return json(res, 404, { error: 'No export diff available yet.' });
+        const rows = [
+          'ChangeType,Username,DetectedAt'
+        ];
+        for (const u of diff.lostFollowers || []) rows.push(`"UNFOLLOWED_YOU","${u}","${diff.timestamp}"`);
+        for (const u of diff.gainedFollowers || []) rows.push(`"NEW_FOLLOWER","${u}","${diff.timestamp}"`);
+        for (const u of diff.unfollowedByYou || []) rows.push(`"UNFOLLOWED_BY_YOU","${u}","${diff.timestamp}"`);
+        for (const u of diff.newFollowing || []) rows.push(`"NEW_FOLLOWING","${u}","${diff.timestamp}"`);
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="who-unfollowed-me-diff.csv"'
+        });
+        return res.end(rows.join('\n'));
+      }
       case 'POST /api/settings': {
         const r = validateSettings(JSON.parse(await body(req)), settings);
         if (r.errors.length) return json(res, 400, { error: r.errors.join(' ') });
@@ -383,7 +408,11 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
           list.sort((a, b) => isNewest ? (dates[b] || 0) - (dates[a] || 0) : (dates[a] || 0) - (dates[b] || 0));
         } else {
           if (!accounts.sets) return json(res, 400, { error: 'Import your data first.' });
-          list = (b.usernames || []).map(normalizeUsername).filter(u => accounts.sets.following.has(u));   // can only unfollow accounts you follow
+          if (b.list === 'diffStillFollowing') {
+            list = accounts.list('diffStillFollowing').filter(u => accounts.sets.following.has(u));
+          } else {
+            list = (b.usernames || []).map(normalizeUsername).filter(u => accounts.sets.following.has(u));   // can only unfollow accounts you follow
+          }
         }
         if (job === 'unfollow' || job === 'cancel') {
           list = list.filter(u => !whitelist.has(u));

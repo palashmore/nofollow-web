@@ -68,10 +68,13 @@ export class AutomationController extends EventEmitter {
     const s = this.stats, cfg = this.getSettings();
     const now = Date.now();
     const recentHourly = (this.actionTimestamps || []).filter(t => t > now - 3600 * 1000).length;
+    const hour = new Date().getHours();
+    const circadianActive = hour >= 1 && hour < 6;
     return {
       job: this.job.name, status: this.status, pauseReason: this.pauseReason, runId: this.run?.runId || null, ...s,
       remaining: Math.max(0, s.selected - s.processed),
       hourlyActions: recentHourly, hourlyLimit: cfg.hourlyLimit || 60, cooldownMinutes: cfg.cooldownMinutes || 20,
+      circadianActive,
       profile: cfg.executionProfile, intervalSec: cfg.actionIntervalSec, navigationTimeoutSec: cfg.navigationTimeoutSec, elementTimeoutSec: cfg.elementTimeoutSec, maxAttempts: cfg.maxAttempts,
     };
   }
@@ -200,8 +203,22 @@ export class AutomationController extends EventEmitter {
           this.logger.info('Hourly cooldown finished; resuming automation.');
         } else {
           this.#op('Waiting before next account', null);
-          const t0 = Date.now();   // fixed interval, re-read every tick so a settings change applies to the wait in progress
-          await sleepUntil(Infinity, () => this.stopFlag || this.pauseFlag || Date.now() - t0 >= s.actionIntervalSec * 1000);
+          const t0 = Date.now();
+          const isCustom = this.getSettings().executionProfile === 'custom';
+          // Daily Safety Budgeting (Human Curve): ±15% natural jitter for preset profiles; fixed for custom
+          const jitter = isCustom ? 1.0 : (0.85 + Math.random() * 0.3);
+          const hour = new Date().getHours();
+          const circadianMultiplier = (!isCustom && hour >= 1 && hour < 6) ? 1.5 : 1.0;
+
+          // Re-evaluate live every tick so dynamic setting changes take immediate effect
+          await sleepUntil(Infinity, () => {
+            if (this.stopFlag || this.pauseFlag) return true;
+            const currentCfg = this.getSettings();
+            const baseSec = currentCfg.actionIntervalSec != null ? Number(currentCfg.actionIntervalSec) : 3;
+            if (baseSec <= 0) return true;
+            const targetDelay = baseSec * 1000 * jitter * circadianMultiplier;
+            return Date.now() - t0 >= targetDelay;
+          });
         }
       }
     }

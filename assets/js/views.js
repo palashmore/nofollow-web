@@ -1701,13 +1701,59 @@ export function vipInfluencerView(el) {
     }
   };
 
+  const autoPoll = setInterval(() => {
+    if (store.data?.vipScanner?.active) {
+      refreshData();
+    }
+  }, 2500);
+
   refreshData();
   updateScannerState(store.data?.vipScanner);
 
   return {
+    onVipScanner: snap => {
+      updateScannerState(snap);
+    },
+    onVipAccount: acc => {
+      // Live increment the 4 KPI metric cards immediately
+      const sc = $('#vip-kpi-scanned', el);
+      if (sc) {
+        const cur = parseInt((sc.textContent || '0').replace(/,/g, ''), 10) || 0;
+        sc.textContent = fmtNum(cur + 1);
+      }
+      if (acc.isVerified) {
+        const vc = $('#vip-kpi-verified', el);
+        if (vc) {
+          const cur = parseInt((vc.textContent || '0').replace(/,/g, ''), 10) || 0;
+          vc.textContent = fmtNum(cur + 1);
+        }
+      }
+      if ((acc.followersCount || 0) >= 10000) {
+        const k10 = $('#vip-kpi-10k', el);
+        if (k10) {
+          const cur = parseInt((k10.textContent || '0').replace(/,/g, ''), 10) || 0;
+          k10.textContent = fmtNum(cur + 1);
+        }
+      }
+      if ((acc.followersCount || 0) >= 50000) {
+        const k50 = $('#vip-kpi-50k', el);
+        if (k50) {
+          const cur = parseInt((k50.textContent || '0').replace(/,/g, ''), 10) || 0;
+          k50.textContent = fmtNum(cur + 1);
+        }
+      }
+      const lbl = $('#vip-progress-label', el);
+      if (lbl && acc.username) lbl.textContent = `Scanning @${acc.username}...`;
+    },
+    onVipScanned: async () => {
+      await refreshData();
+    },
     onData: () => {
       refreshData();
       updateScannerState(store.data?.vipScanner);
+    },
+    onDestroy: () => {
+      clearInterval(autoPoll);
     }
   };
 }

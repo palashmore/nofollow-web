@@ -75,6 +75,7 @@ function renderTopbar() {
 function route() {
   const r = ROUTES.find(x => x.id === current()) || ROUTES[0];
   markActive(); $('#sidebar').classList.remove('open');
+  store.view?.onDestroy?.();
   // fresh element every render so views never stack duplicate event listeners
   const old = $('#view'); const el = old.cloneNode(false); old.replaceWith(el);
   store.view = r.render(el) || null;
@@ -110,6 +111,19 @@ function connect() {
   es.addEventListener('log', ev => { const l = JSON.parse(ev.data); store.logs.push(l); if (store.logs.length > 300) store.logs.shift(); store.view?.onLog?.(l); if (l.level === 'CRITICAL') toast(l.message, 'err'); });
   const upd = debounce(async () => { await refresh(); store.view?.onAccounts?.(); }, 700);
   es.addEventListener('account', upd);
+  es.addEventListener('vipScanner', ev => {
+    const s = JSON.parse(ev.data);
+    store.data.vipScanner = s;
+    store.view?.onVipScanner?.(s);
+  });
+  const debouncedVipRefresh = debounce(async () => {
+    store.view?.onVipScanned?.();
+  }, 800);
+  es.addEventListener('vipScanned', ev => {
+    const a = JSON.parse(ev.data);
+    store.view?.onVipAccount?.(a);
+    debouncedVipRefresh();
+  });
 }
 
 document.addEventListener('click', async e => {

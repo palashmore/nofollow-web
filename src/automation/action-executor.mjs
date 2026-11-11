@@ -1,5 +1,5 @@
 import { REL } from '../utils/constants.mjs';
-import { FOLLOWING_BTN, REQUESTED_BTN, classify, takeSnapshot } from './relationship-detector.mjs';
+import { FOLLOWING_BTN, REQUESTED_BTN, FOLLOW_BTN, classify, takeSnapshot } from './relationship-detector.mjs';
 import { AutomationError, ERR } from './errors.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -74,3 +74,24 @@ async function act(page, { button, item, elementTimeout = 10000 }) {
 
 export const unfollow = (page, opts = {}) => act(page, { button: FOLLOWING_BTN, item: UNFOLLOW_ITEM, ...opts });
 export const cancelRequest = (page, opts = {}) => act(page, { button: REQUESTED_BTN, item: CANCEL_ITEM, ...opts });
+
+/**
+ * Click the Follow / Follow Back button, then report the state the page shows.
+ * Success is confirmed when page state transitions to FOLLOWING (public) or REQUESTED (private).
+ */
+export async function follow(page, { elementTimeout = 10000 } = {}) {
+  const btn = await pickButton(page, FOLLOW_BTN, elementTimeout);
+  await page.bringToFront().catch(() => {});
+  await btn.first().scrollIntoViewIfNeeded().catch(() => {});
+  await btn.click({ timeout: elementTimeout });
+
+  const end = Date.now() + elementTimeout + 4000;
+  let last = { state: REL.LOADING };
+  while (Date.now() < end) {
+    last = classify(await takeSnapshot(page));
+    if ([REL.FOLLOWING, REL.REQUESTED, REL.ACTION_BLOCKED, REL.CAPTCHA, REL.LOGIN_REQUIRED].includes(last.state)) return last;
+    await sleep(400);
+  }
+  return last;
+}
+

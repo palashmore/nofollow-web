@@ -908,3 +908,187 @@ export function storiesHighlightsView(el) {
   loadData();
   return { onData: loadData };
 }
+
+/* ---------------------------------------------------------------- custom list runner */
+export function customListView(el) {
+  el.innerHTML = `
+    <h1>Custom Target List Runner</h1>
+    <p class="sub">Run Follow, Unfollow, or Request Cancellation on a specific target list of accounts. Accounts are verified live on Instagram before any click.</p>
+
+    <div class="grid two" style="margin-top:20px">
+      <!-- Input Card -->
+      <div class="card">
+        <h2>Target Accounts</h2>
+        <p class="sub">Paste handles, profile URLs, or upload a .txt/.csv file.</p>
+        
+        <div class="row" style="margin-bottom:12px;gap:8px">
+          <label class="btn sm ghost" style="cursor:pointer">
+            ${icon('upload', 14)} Upload .txt / .csv
+            <input type="file" id="cl-file" accept=".txt,.csv" style="display:none">
+          </label>
+          <button class="btn sm ghost" id="cl-sample">Sample handles</button>
+          <button class="btn sm ghost" id="cl-clear">Clear</button>
+        </div>
+
+        <label class="field" style="margin-bottom:14px">
+          <textarea id="cl-input" rows="8" placeholder="@username1&#10;@username2&#10;https://www.instagram.com/username3/&#10;user4, user5" style="font-family:var(--font-mono);font-size:12px;resize:vertical"></textarea>
+        </label>
+
+        <div class="row" style="justify-content:space-between;align-items:center">
+          <span class="chip" id="cl-count"><span class="dot"></span>0 accounts detected</span>
+          <span class="sub" style="font-size:11px">Auto-cleaned &amp; deduplicated</span>
+        </div>
+      </div>
+
+      <!-- Action & Config Card -->
+      <div class="card">
+        <h2>Action &amp; Pacing</h2>
+        <p class="sub">Select mutation mode and execution speed.</p>
+
+        <div style="margin-bottom:16px">
+          <label class="field" style="margin-bottom:8px">Action
+            <select id="cl-mode">
+              <option value="follow">Follow (Follow profile / send request)</option>
+              <option value="cancel">Cancel Request (Cancel pending follow request)</option>
+              <option value="unfollow">Unfollow (Unfollow profile)</option>
+            </select>
+          </label>
+          <p class="sub" id="cl-mode-hint" style="font-size:12px;margin:4px 0 12px;color:var(--muted)">Follows new accounts or sends requests to private profiles.</p>
+        </div>
+
+        <div class="row" id="cl-speed" style="margin-bottom:16px">
+          <label class="field" style="grid-template-columns:auto auto;align-items:center;gap:8px">Profile
+            <select id="cl-preset">
+              ${Object.entries(PROFILES).map(([k, p]) => `<option value="${k}">${p.name} (${p.intervalSec} s)</option>`).join('')}
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label class="field" style="grid-template-columns:auto 64px auto;align-items:center;gap:6px">Interval
+            <input type="number" id="cl-interval" min="2" max="600" step="1" value="${store.data?.settings?.actionIntervalSec || 15}"> s
+          </label>
+        </div>
+
+        <div style="margin-bottom:16px">
+          <label class="field">Execution Order
+            <select id="cl-order">
+              <option value="listed" selected>As Listed / Input Order</option>
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="row" style="margin-top:20px">
+          <button class="btn primary" id="cl-start" disabled>Run Custom List (0)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Engine Status -->
+    <div class="card" id="cl-engine-host" style="margin-top:20px"></div>
+  `;
+
+  let currentEngine = enginePanel($('#cl-engine-host', el), 'follow');
+
+  function parseUsernames(text) {
+    if (!text) return [];
+    const tokens = text.split(/[\r\n,;\s]+/);
+    const cleaned = tokens
+      .map(t => t.trim().replace(/^@+/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/\/.*$/, '').toLowerCase())
+      .filter(u => /^[a-z0-9_][a-z0-9_.-]{0,29}$/.test(u));
+    return Array.from(new Set(cleaned));
+  }
+
+  function syncCount() {
+    const list = parseUsernames($('#cl-input', el).value);
+    const countEl = $('#cl-count', el);
+    const startBtn = $('#cl-start', el);
+    const mode = $('#cl-mode', el).value;
+    const modeVerb = mode === 'cancel' ? 'Cancel Requests for' : mode === 'follow' ? 'Follow' : 'Unfollow';
+    if (countEl) countEl.innerHTML = `<span class="dot ${list.length ? 'ok' : ''}"></span>${fmtNum(list.length)} accounts detected`;
+    if (startBtn) {
+      startBtn.disabled = !list.length;
+      startBtn.textContent = `${modeVerb} ${fmtNum(list.length)} Accounts`;
+    }
+  }
+
+  $('#cl-input', el).addEventListener('input', syncCount);
+  $('#cl-clear', el).addEventListener('click', () => { $('#cl-input', el).value = ''; syncCount(); });
+  $('#cl-sample', el).addEventListener('click', () => {
+    $('#cl-input', el).value = `@cristiano\n@leomessi\n@selenagomez\n@natgeo`;
+    syncCount();
+  });
+
+  $('#cl-file', el).addEventListener('change', e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      $('#cl-input', el).value = ev.target.result;
+      syncCount();
+      toast(`Loaded ${file.name}`, 'ok');
+    };
+    reader.readAsText(file);
+  });
+
+  $('#cl-mode', el).addEventListener('change', e => {
+    const mode = e.target.value;
+    const hints = {
+      follow: 'Follows new accounts or sends requests to private profiles.',
+      cancel: 'Cancels pending follow requests previously sent to private accounts.',
+      unfollow: 'Unfollows accounts that you currently follow.'
+    };
+    $('#cl-mode-hint', el).textContent = hints[mode] || '';
+    $('#cl-engine-host', el).innerHTML = '';
+    currentEngine = enginePanel($('#cl-engine-host', el), mode);
+    syncCount();
+  });
+
+  $('#cl-preset', el).addEventListener('change', e => {
+    const p = PROFILES[e.target.value];
+    if (p) $('#cl-interval', el).value = p.intervalSec;
+  });
+
+  $('#cl-start', el).addEventListener('click', async () => {
+    const list = parseUsernames($('#cl-input', el).value);
+    if (!list.length) return toast('Please enter at least one valid username.', 'warn');
+    const mode = $('#cl-mode', el).value;
+    const order = $('#cl-order', el).value;
+    const intervalSec = Number($('#cl-interval', el).value) || 15;
+
+    try {
+      await post('/api/settings', { actionIntervalSec: intervalSec });
+    } catch {}
+
+    const actionText = mode === 'cancel' ? 'Cancel Requests for' : mode === 'follow' ? 'Follow' : 'Unfollow';
+    const confirmed = await confirmModal({
+      title: `${actionText} ${fmtNum(list.length)} Custom Accounts?`,
+      body: `<p>You are about to run <b>${mode.toUpperCase()}</b> on <b>${fmtNum(list.length)}</b> custom accounts at <b>${intervalSec}s</b> intervals.</p><p>Each account will be verified live on Instagram before any action.</p>`,
+      confirmText: `Start ${mode.toUpperCase()}`,
+      danger: mode === 'unfollow'
+    });
+    if (!confirmed) return;
+
+    try {
+      await post('/api/run/start', {
+        mode,
+        usernames: list,
+        order,
+        custom: true,
+        confirm: true
+      });
+      toast(`Custom list ${mode} automation started!`, 'ok');
+      await hooks.refresh();
+      currentEngine?.update?.();
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  });
+
+  syncCount();
+  return {
+    onData: () => currentEngine?.update?.(),
+    onEngine: () => currentEngine?.update?.()
+  };
+}
+

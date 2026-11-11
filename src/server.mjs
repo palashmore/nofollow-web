@@ -30,7 +30,8 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
   const logger = new Logger(logsDir);
   const checkpoints = {
     unfollow: new CheckpointService(path.join(dataDir, 'execution-state.json')),
-    cancel: new PendingRequestStateService(path.join(dataDir, 'pending-request-state.json'))
+    cancel: new PendingRequestStateService(path.join(dataDir, 'pending-request-state.json')),
+    follow: new CheckpointService(path.join(dataDir, 'follow-execution-state.json'))
   };
   const accounts = new AccountService(path.join(dataDir, 'import.json'), checkpoints);
   const pairing = new PairingService(path.join(dataDir, 'pairing.json'));
@@ -43,6 +44,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
   const engines = {
     unfollow: new AutomationController({ ig: session, checkpoint: checkpoints.unfollow, logger, getSettings: () => settings, job: 'unfollow' }),
     cancel: new PendingRequestCancellationEngine({ ig: session, checkpoint: checkpoints.cancel, logger, getSettings: () => settings, accountService: accounts }),
+    follow: new AutomationController({ ig: session, checkpoint: checkpoints.follow, logger, getSettings: () => settings, job: 'follow' }),
   };
   const orchestrator = new CentralJobOrchestrator({
     queueFile: path.join(dataDir, 'central-queue-state.json'),
@@ -244,21 +246,29 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
       case 'POST /api/run/start': {
         const b = JSON.parse(await body(req));
         if (b.confirm !== true) return json(res, 400, { error: 'Confirmation required.' });
-        const job = b.mode === 'cancel' ? 'cancel' : 'unfollow';
-        if (!accounts.sets) return json(res, 400, { error: 'Import your data first.' });
-        let list;
+        const job = ['cancel', 'follow'].includes(b.mode) ? b.mode : 'unfollow';
         const order = b.order || 'oldest';
-        if (job === 'cancel') {
+        let list = [];
+
+        if (b.custom || job === 'follow') {
+          list = Array.from(new Set((b.usernames || []).map(normalizeUsername).filter(Boolean)));
+          if (!list.length) return json(res, 400, { error: 'No valid usernames provided in the custom list.' });
+        } else if (job === 'cancel') {
+          if (!accounts.sets) return json(res, 400, { error: 'Import your data first.' });
           const outgoing = new Set(accounts.list('pending'));   // only requests YOU sent; incoming requests and followings are never touched
-          list = b.all ? accounts.cancelEligible() : (b.usernames || []).filter(u => outgoing.has(u));
+          list = b.all ? accounts.cancelEligible() : (b.usernames || []).map(normalizeUsername).filter(u => outgoing.has(u));
           const dates = accounts.model?.requestDates || {};
           const isNewest = /new(est)?/i.test(order);
           list.sort((a, b) => isNewest ? (dates[b] || 0) - (dates[a] || 0) : (dates[a] || 0) - (dates[b] || 0));
-        } else list = (b.usernames || []).filter(u => accounts.sets.following.has(u));   // can only unfollow accounts you follow
+        } else {
+          if (!accounts.sets) return json(res, 400, { error: 'Import your data first.' });
+          list = (b.usernames || []).map(normalizeUsername).filter(u => accounts.sets.following.has(u));   // can only unfollow accounts you follow
+        }
         return json(res, 200, await startJob(job, list, !!b.includeRetry, order));
       }
       case 'POST /api/run/retry-failed': {
-        const job = JSON.parse(await body(req) || '{}').mode === 'cancel' ? 'cancel' : 'unfollow';
+        const mode = JSON.parse(await body(req) || '{}').mode;
+        const job = ['cancel', 'follow'].includes(mode) ? mode : 'unfollow';
         const cp = checkpoints[job];
         const list = Object.values(cp.state.accounts).filter(a => ['FAILED', 'NEEDS_REVIEW'].includes(a.status)).map(a => a.username);
         for (const u of list) cp.set(u, { status: 'RETRY_PENDING', reason: 'retry requested' });
@@ -269,7 +279,8 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
       case 'POST /api/run/stop': activeEngine()?.stop(); return json(res, 200, shownEngine().snapshot());
       case 'POST /api/run/reset': {
         if (activeEngine()) return json(res, 409, { error: 'Stop the run first.' });
-        const job = JSON.parse(await body(req) || '{}').mode === 'cancel' ? 'cancel' : 'unfollow';
+        const mode = JSON.parse(await body(req) || '{}').mode;
+        const job = ['cancel', 'follow'].includes(mode) ? mode : 'unfollow';
         checkpoints[job].reset(); return json(res, 200, { ok: true });
       }
       case 'POST /api/shutdown': {

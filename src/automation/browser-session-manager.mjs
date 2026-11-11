@@ -5,7 +5,7 @@ import { ensureDir } from '../utils/file-manager.mjs';
 import { PATHS, REL } from '../utils/constants.mjs';
 import { isAlive } from '../utils/instance-lock.mjs';
 import { openProfile } from './profile-navigator.mjs';
-import { unfollow, cancelRequest } from './action-executor.mjs';
+import { unfollow, cancelRequest, follow } from './action-executor.mjs';
 import { waitForState } from './relationship-detector.mjs';
 import { BrowserTabManager } from './browser-tab-manager.mjs';
 import { classifySession, takeSessionSnapshot, SESSION } from './session-detector.mjs';
@@ -131,6 +131,7 @@ export class BrowserSessionManager {
 
   async unfollow(opts = {}) { await this.ensureBrowser(); return unfollow(await this.tabs.action(), opts); }
   async cancelRequest(opts = {}) { await this.ensureBrowser(); return cancelRequest(await this.tabs.action(), opts); }
+  async follow(opts = {}) { await this.ensureBrowser(); return follow(await this.tabs.action(), opts); }
 
   async screenshot(name) {
     try {

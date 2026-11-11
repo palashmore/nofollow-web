@@ -16,15 +16,16 @@ const BAD = new Set(['SAFETY_PAUSED', 'FAILED']);
 const WORDS = {
   unfollow: { done: 'Unfollowed', already: 'Already unfollowed', noun: 'accounts', idle: 'Select accounts on the Non-Followers page and press Start.' },
   cancel: { done: 'Cancelled', already: 'Already cancelled', noun: 'requests', idle: 'Select outgoing requests below, or press Cancel All Pending.' },
+  follow: { done: 'Followed', already: 'Already following', noun: 'accounts', idle: 'Input or select accounts to follow and press Start.' },
 };
 export const engineOf = mode => store.data?.engines?.[mode] || store.data?.engine;
 export const anyActive = () => Object.values(store.data?.engines || {}).some(e => ACTIVE.has(e.status));
 
-/** Automation control panel for one job ('unfollow' | 'cancel'). */
+/** Automation control panel for one job ('unfollow' | 'cancel' | 'follow'). */
 export function enginePanel(host, mode = 'unfollow') {
-  const W = WORDS[mode];
+  const W = WORDS[mode] || WORDS.unfollow;
   host.innerHTML = `
-    <div class="row" style="justify-content:space-between"><h2 style="margin:0">${mode === 'cancel' ? 'Cancellation' : 'Automation'}</h2><span class="chip" id="e-chip"></span></div>
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">${mode === 'cancel' ? 'Cancellation' : mode === 'follow' ? 'Follow Automation' : 'Automation'}</h2><span class="chip" id="e-chip"></span></div>
     <div id="e-warn"></div>
     <div class="progress" style="margin:14px 0 8px"><i id="e-bar" style="width:0%"></i></div>
     <div class="sub" style="margin:0" id="e-now"></div>
@@ -55,17 +56,17 @@ export function enginePanel(host, mode = 'unfollow') {
       <a class="btn ghost" href="#/execution-history">View logs</a>
     </div>`;
   const stat = (v, l) => `<div class="stat"><b>${fmtNum(v)}</b><span>${l}</span></div>`;
-  const sel = () => (mode === 'cancel' ? store.reqSelection : store.selection);
+  const sel = () => (mode === 'cancel' ? store.reqSelection : mode === 'follow' ? (store.followSelection || store.selection) : store.selection);
 
   function update() {
     const e = engineOf(mode); if (!e) return;
     const k = store.data.kpis, c = k.cancel || {}, st = store.data.settings;
-    const mine = e.job === mode ? e : { ...e, status: 'IDLE', pauseReason: null, selected: 0, processed: 0, unfollowed: 0, alreadyUnfollowed: 0, accepted: 0, skipped: 0, unavailable: 0, needsReview: 0, failed: 0, remaining: 0, current: null, operation: null, lastSuccess: null };
+    const mine = e.job === mode ? e : { ...e, status: 'IDLE', pauseReason: null, selected: 0, processed: 0, unfollowed: 0, followed: 0, alreadyUnfollowed: 0, alreadyFollowed: 0, accepted: 0, skipped: 0, unavailable: 0, needsReview: 0, failed: 0, remaining: 0, current: null, operation: null, lastSuccess: null };
     $('#e-chip', host).innerHTML = `<span class="dot ${mine.status === 'RUNNING' ? 'ok' : BAD.has(mine.status) ? 'bad' : ACTIVE.has(mine.status) ? 'warn' : ''}"></span>${esc(label(mine.status))}`;
     $('#e-bar', host).style.width = `${mine.selected ? Math.round((mine.processed / mine.selected) * 100) : 0}%`;
     $('#e-now', host).textContent = mine.current ? `${mine.operation || 'Working'}: @${mine.current}` : (mine.operation || (!ACTIVE.has(mine.status) ? W.idle : ''));
     $('#e-warn', host).innerHTML = mine.pauseReason ? `<div class="notice ${BAD.has(mine.status) ? 'bad' : ''}">${esc(mine.pauseReason)}</div>` : '';
-    $('#e-stats', host).innerHTML = stat(mine.selected, 'Selected') + stat(mine.processed, 'Processed') + stat(mine.unfollowed, W.done) + stat(mine.alreadyUnfollowed, W.already)
+    $('#e-stats', host).innerHTML = stat(mine.selected, 'Selected') + stat(mine.processed, 'Processed') + stat(mine.unfollowed + (mine.followed || 0), W.done) + stat(mine.alreadyUnfollowed + (mine.alreadyFollowed || 0), W.already)
       + (mode === 'cancel' ? stat(mine.accepted, 'Accepted') : '') + stat(mine.skipped + mine.unavailable, 'Skipped / unavailable') + stat(mine.needsReview, 'Needs review') + stat(mine.failed, 'Failed') + stat(mine.remaining, 'Remaining')
       + `<div class="stat"><b>${mine.lastSuccess ? '@' + esc(mine.lastSuccess) : '—'}</b><span>Last success</span></div>`;
     const prof = PROFILES[st.executionProfile]?.name || 'Custom';
@@ -74,7 +75,7 @@ export function enginePanel(host, mode = 'unfollow') {
     $('#sp-est', host).textContent = `≈ ${fmtNum(perHour(st))} accounts / hour${PROFILES[st.executionProfile] ? ` · ${PROFILES[st.executionProfile].note}` : ''}`;
     const active = ACTIVE.has(mine.status), busy = anyActive(), b = n => $(`[data-a=${n}]`, host);
     const n = sel().size;
-    b('start').disabled = busy || !n; b('start').textContent = mode === 'cancel' ? `Cancel Selected (${n})` : `Start selected (${n})`;
+    b('start').disabled = busy || !n; b('start').textContent = mode === 'cancel' ? `Cancel Selected (${n})` : mode === 'follow' ? `Follow Selected (${n})` : `Start selected (${n})`;
     if (mode === 'cancel') { b('all').disabled = busy || !store.data.summary || !(c.remaining > 0); b('all').textContent = `Cancel All Pending (${fmtNum(c.remaining || 0)})`; }
     b('pause').disabled = mine.status !== 'RUNNING'; b('resume').disabled = !WAITING.has(mine.status); b('stop').disabled = !active || mine.status === 'STOPPING';
     const bad = mode === 'cancel' ? (c.failed || 0) + (c.review || 0) : k.failed + k.pendingReview;
@@ -100,6 +101,12 @@ export function enginePanel(host, mode = 'unfollow') {
         if (!await confirmStart('Cancel selected follow requests?', `<p>You are about to process <b>${fmtNum(n)}</b> outgoing pending follow requests, one at a time, ${interval()} s apart (${isNewest ? 'Newest First' : 'Oldest First'}). Requests that were accepted are never undone.</p>`, 'Confirm Cancellation')) return;
         await post('/api/run/start', { mode: 'cancel', usernames: [...store.reqSelection], confirm: true, order });
         toast(`Cancellation started (${isNewest ? 'Newest First' : 'Oldest First'})`, 'ok');
+      } else if (a === 'start' && mode === 'follow') {
+        const list = store.followSelection ? [...store.followSelection] : [...store.selection];
+        const n = list.length, ps = perHour(store.data.settings);
+        if (!await confirmStart(`Follow ${fmtNum(n)} accounts?`, `<p>One account at a time, ${interval()} s between actions: about <b>${fmtNum(ps)} accounts per hour</b>. Each profile is verified live on Instagram before following.</p>`, 'Start Following')) return;
+        await post('/api/run/start', { mode: 'follow', usernames: list, confirm: true, custom: true });
+        toast('Follow automation started', 'ok');
       } else if (a === 'all') {
         const p = await api('/api/cancel/preview');
         const order = $('#cancel-order-select', host)?.value || 'oldest';

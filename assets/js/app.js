@@ -19,6 +19,7 @@ const ROUTES = [
   { id: 'intelligence', label: 'Followers Intelligence', icon: 'sparkles', render: V.intelligenceView },
   { id: 'analytics', label: 'Analytics', icon: 'activity', render: V.analyticsView },
   { sep: 'Automation' },
+  { id: 'custom-list', label: 'Custom List Runner', icon: 'list', render: V.customListView },
   { id: 'queue', label: 'Automation Queue', icon: 'clock', render: V.queueView },
   { sep: 'Content' },
   { id: 'archive', label: 'Post Archive', icon: 'archive', render: V.postArchiveView },

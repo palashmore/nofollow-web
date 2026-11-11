@@ -8,6 +8,7 @@ export const FOLLOWING_BTN = /^(Following|Siguiendo|Abonniert|Suivi\(e\)|Seguind
 export const REQUESTED_BTN = /^(Requested|Solicitado|Angefragt|Demand[eé])/i;
 export const REQUESTED_RE = /^(Requested|Solicitado|Angefragt|Demand[eé])/i;
 export const FOLLOW_RE = /^(Follow|Follow Back|Seguir|Folgen|Suivre|Seguir de volta)$/i;
+export const FOLLOW_BTN = /^(Follow|Follow Back|Seguir|Folgen|Suivre|Seguir de volta)/i;
 const UNAVAILABLE_RE = /Sorry, this page isn'?t available|Page Not Found|isn'?t available|The link you followed may be broken/i;
 
 /**

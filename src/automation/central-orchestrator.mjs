@@ -17,6 +17,7 @@ export const JOB_STATUS = {
 export const JOB_TYPES = {
   UNFOLLOW: 'unfollow',
   CANCEL: 'cancel',
+  FOLLOW: 'follow',
   ARCHIVE: 'archive',
   STORY_HIGHLIGHTS: 'story_highlights'
 };

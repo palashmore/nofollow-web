@@ -16,17 +16,26 @@ export const JOBS = {
   unfollow: {
     name: 'unfollow', verb: 'Unfollowing', act: REL.FOLLOWING, done: STATUS.UNFOLLOWED, already: STATUS.ALREADY_UNFOLLOWED,
     alreadyMsg: 'You were not following this account', doneMsg: 'Unfollowed and verified.',
+    isDone: s => s === REL.NOT_FOLLOWING,
     other: { [REL.REQUESTED]: [STATUS.SKIPPED, 'Only a follow request is pending (not an active follow); left alone.'] },
     perform: (ig, o) => ig.unfollow(o),
   },
   cancel: {
     name: 'cancel', verb: 'Cancelling request for', act: REL.REQUESTED, done: STATUS.CANCELLED, already: STATUS.ALREADY_CANCELLED,
     alreadyMsg: 'No request is pending any more', doneMsg: 'Follow request cancelled and verified.',
+    isDone: s => s === REL.NOT_FOLLOWING,
     other: { [REL.FOLLOWING]: [STATUS.ACCEPTED, 'The request was accepted: you follow this account now. Nothing was cancelled.'] },
     perform: (ig, o) => ig.cancelRequest(o),
   },
+  follow: {
+    name: 'follow', verb: 'Following', act: REL.NOT_FOLLOWING, done: STATUS.FOLLOWED, already: STATUS.ALREADY_FOLLOWED,
+    alreadyMsg: 'You are already following this account', doneMsg: 'Followed and verified.',
+    isDone: s => s === REL.FOLLOWING || s === REL.REQUESTED,
+    other: { [REL.FOLLOWING]: [STATUS.ALREADY_FOLLOWED, 'You are already following this account.'], [REL.REQUESTED]: [STATUS.SKIPPED, 'Follow request is already pending; left alone.'] },
+    perform: (ig, o) => ig.follow(o),
+  },
 };
-const COUNTER = { UNFOLLOWED: 'unfollowed', CANCELLED: 'unfollowed', ALREADY_UNFOLLOWED: 'alreadyUnfollowed', ALREADY_CANCELLED: 'alreadyUnfollowed', ACCEPTED: 'accepted', SKIPPED: 'skipped', PROFILE_UNAVAILABLE: 'unavailable', NEEDS_REVIEW: 'needsReview', FAILED: 'failed' };
+const COUNTER = { UNFOLLOWED: 'unfollowed', CANCELLED: 'unfollowed', FOLLOWED: 'followed', ALREADY_UNFOLLOWED: 'alreadyUnfollowed', ALREADY_CANCELLED: 'alreadyUnfollowed', ALREADY_FOLLOWED: 'alreadyFollowed', ACCEPTED: 'accepted', SKIPPED: 'skipped', PROFILE_UNAVAILABLE: 'unavailable', NEEDS_REVIEW: 'needsReview', FAILED: 'failed' };
 
 /**
  * ONE sequential action worker over the selected accounts, driven by a validated state machine
@@ -49,7 +58,7 @@ export class AutomationController extends EventEmitter {
   }
 
   #blank() {
-    return { selected: 0, processed: 0, unfollowed: 0, alreadyUnfollowed: 0, accepted: 0, skipped: 0, unavailable: 0, failed: 0, needsReview: 0, current: null, operation: null, lastSuccess: null };
+    return { selected: 0, processed: 0, unfollowed: 0, followed: 0, alreadyUnfollowed: 0, alreadyFollowed: 0, accepted: 0, skipped: 0, unavailable: 0, failed: 0, needsReview: 0, current: null, operation: null, lastSuccess: null };
   }
 
   get active() { return ACTIVE_STATES.has(this.status); }
@@ -184,7 +193,9 @@ export class AutomationController extends EventEmitter {
     const left = queue.filter(u => !FINAL.has(this.checkpoint.statusOf(u)) && ![STATUS.FAILED, STATUS.NEEDS_REVIEW].includes(this.checkpoint.statusOf(u))).length;
     this.checkpoint.updateRun(this.run, { status: kind === 'COMPLETED' && left ? 'INCOMPLETE' : kind, endedAt: new Date().toISOString(), counts: { ...this.stats } });
     const c = this.stats;
-    this.logger.info(`Run ${kind.toLowerCase()}: ${c.unfollowed} done, ${c.alreadyUnfollowed} already done, ${c.accepted} accepted, ${c.unavailable} unavailable, ${c.skipped} skipped, ${c.needsReview} need review, ${c.failed} failed, ${left} left.`, { runId: this.run.runId });
+    const doneCount = c.unfollowed + (c.followed || 0);
+    const alreadyCount = c.alreadyUnfollowed + (c.alreadyFollowed || 0);
+    this.logger.info(`Run ${kind.toLowerCase()}: ${doneCount} done, ${alreadyCount} already done, ${c.accepted} accepted, ${c.unavailable} unavailable, ${c.skipped} skipped, ${c.needsReview} need review, ${c.failed} failed, ${left} left.`, { runId: this.run.runId });
     this.stats.current = null; this.stats.operation = null;
     this.stopFlag = false; this.pauseFlag = false;
     if (kind === 'STOPPED') { if (this.status !== E.STOPPING) this.#to(E.STOPPING); this.#to(E.IDLE); }
@@ -249,15 +260,16 @@ export class AutomationController extends EventEmitter {
         this.#record(u, STATUS.PROFILE_UNAVAILABLE, 'Profile not available (deleted, renamed or suspended)');
         this.#log('WARNING', u, STATUS.PROFILE_UNAVAILABLE, 'Profile unavailable. Will not be revisited.', { previousState: state, errorCategory: ERR.PROFILE_UNAVAILABLE });
         return 'done';
-      case REL.NOT_FOLLOWING:
-        this.#record(u, J.already, J.alreadyMsg);
-        this.#log('INFO', u, J.already, `${J.alreadyMsg}. No action required.${info}`, { previousState: state });
-        return 'done';
       case REL.LOGIN_REQUIRED: return this.#needLogin(u);
       case REL.ACTION_BLOCKED: this.#safetyPause(u, 'Instagram showed an action-block / try-again-later message'); return 'paused';
       case REL.CAPTCHA: this.#safetyPause(u, 'Instagram asked for a security check / CAPTCHA'); return 'paused';
       case J.act: return this.#perform(u, s, info);
       default:
+        if (state === (J.name === 'follow' ? REL.FOLLOWING : REL.NOT_FOLLOWING)) {
+          this.#record(u, J.already, J.alreadyMsg);
+          this.#log('INFO', u, J.already, `${J.alreadyMsg}. No action required.${info}`, { previousState: state });
+          return 'done';
+        }
         if (J.other[state]) { const [st, msg] = J.other[state]; this.#record(u, st, msg); this.#log('INFO', u, st, msg, { previousState: state }); return 'done'; }
         return this.#review(u, 'Could not identify the relationship state on the page', ERR.RELATIONSHIP_AMBIGUOUS, state);
     }
@@ -282,18 +294,26 @@ export class AutomationController extends EventEmitter {
         if (REVIEW_CODES.has(code)) return this.#review(u, `${code}: ${e.message.split('\n')[0]}`, code, J.act);
         throw e;
       }
-      if (![REL.FOLLOWING, REL.REQUESTED, REL.AMBIGUOUS, REL.LOADING].includes(after.state)) break;
+      const isDone = J.isDone ? J.isDone(after.state) : after.state === REL.NOT_FOLLOWING;
+      if (isDone || [REL.ACTION_BLOCKED, REL.CAPTCHA, REL.LOGIN_REQUIRED].includes(after.state)) break;
       if (t < s.maxAttempts) {
         this.#log('WARNING', u, STATUS.RETRY_PENDING, `Not confirmed (state ${after.state}); re-checking the page.`);
         const again = await this.ig.inspect(u, this.#opts(s));
-        if (again.state !== J.act) { after = again; break; }
+        if (J.isDone ? J.isDone(again.state) : again.state !== J.act) { after = again; break; }
       }
     }
+    const isSuccess = J.isDone ? J.isDone(after.state) : after.state === REL.NOT_FOLLOWING;
+    if (isSuccess) {
+      this.stats.lastSuccess = u;
+      const doneStatus = J.done;
+      const successMsg = after.state === REL.REQUESTED && J.name === 'follow'
+        ? 'Follow request sent (private account) and verified.'
+        : J.doneMsg;
+      this.#record(u, doneStatus, null);
+      this.#log('SUCCESS', u, doneStatus, `${successMsg}${info}`, { previousState: J.act, newState: after.state });
+      return 'done';
+    }
     switch (after.state) {
-      case REL.NOT_FOLLOWING:   // verified from the page, not assumed
-        this.stats.lastSuccess = u; this.#record(u, J.done, null);
-        this.#log('SUCCESS', u, J.done, `${J.doneMsg}${info}`, { previousState: J.act, newState: after.state });
-        return 'done';
       case REL.ACTION_BLOCKED: this.#safetyPause(u, 'Instagram blocked the action'); return 'paused';
       case REL.CAPTCHA: this.#safetyPause(u, 'Instagram asked for a security check / CAPTCHA'); return 'paused';
       case REL.LOGIN_REQUIRED: return this.#needLogin(u);

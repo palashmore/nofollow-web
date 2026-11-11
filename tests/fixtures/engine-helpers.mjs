@@ -12,8 +12,8 @@ export const SETTINGS = { executionProfile: 'custom', actionIntervalSec: 0, navi
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** Scripted fake of the browser session. script[user] = state (or array of states consumed in order, or an Error). */
-export function fake(script, { unfollowResult = 'NOT_FOLLOWING', loggedIn = () => true } = {}) {
-  const calls = { inspect: [], unfollow: 0, cancel: 0, verify: 0 };
+export function fake(script, { unfollowResult = 'NOT_FOLLOWING', followResult = 'FOLLOWING', loggedIn = () => true } = {}) {
+  const calls = { inspect: [], unfollow: 0, cancel: 0, follow: 0, verify: 0 };
   const ig = {
     calls, session: { state: 'AUTHENTICATED' },
     async loggedIn() { return loggedIn(); },
@@ -27,6 +27,7 @@ export function fake(script, { unfollowResult = 'NOT_FOLLOWING', loggedIn = () =
     },
     async unfollow() { calls.unfollow++; const r = typeof unfollowResult === 'function' ? unfollowResult() : unfollowResult; if (r instanceof Error) throw r; return { state: r }; },
     async cancelRequest() { calls.cancel++; const r = typeof unfollowResult === 'function' ? unfollowResult() : unfollowResult; if (r instanceof Error) throw r; return { state: r }; },
+    async follow() { calls.follow++; const r = typeof followResult === 'function' ? followResult() : followResult; if (r instanceof Error) throw r; return { state: r }; },
   };
   return ig;
 }

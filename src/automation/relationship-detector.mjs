@@ -128,3 +128,22 @@ export async function waitForState(page, { timeout = 15000, interval = 400 } = {
   }
   return { ...last, state: REL.AMBIGUOUS };
 }
+
+/** Fast-path profile inspection for VIP scanner: returns as soon as followers count or verified badge is parsed. */
+export async function waitForScannerProfile(page, { timeout = 4000, interval = 200 } = {}) {
+  const end = Date.now() + timeout;
+  let last = { state: REL.LOADING, followersCount: null, isVerified: false, followersText: null };
+  while (Date.now() < end) {
+    try {
+      const snap = await takeSnapshot(page);
+      last = classify(snap);
+      if (last.followersCount !== null || last.isVerified || (last.state !== REL.LOADING && last.state !== REL.AMBIGUOUS)) {
+        return last;
+      }
+    } catch (e) {
+      if (/closed/i.test(e.message)) throw e;
+    }
+    await sleep(interval);
+  }
+  return last;
+}

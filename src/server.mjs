@@ -270,14 +270,24 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
           const listKind = b.list || 'following';
           list = accounts.list(listKind);
         }
+        const totalInList = list.length;
+        const rescanAll = !!b.rescanAll;
+        if (!rescanAll) {
+          list = list.filter(u => !profileMeta.has(u));
+          const skipped = totalInList - list.length;
+          if (skipped > 0) logger.info(`VIP Scanner: skipping ${skipped} already-scanned profiles. ${list.length} unscanned remaining.`);
+        }
         const limit = +b.limit || 0;
         if (limit > 0) list = list.slice(0, limit);
+        if (!list.length) {
+          return json(res, 200, { ok: true, total: 0, skipped: totalInList, message: 'All profiles in this list have already been scanned!' });
+        }
         vipScanner.scan(list, {
-          intervalSec: +b.intervalSec || 5,
+          intervalSec: +b.intervalSec || 3,
           autoWhitelistVerified: !!b.autoWhitelistVerified,
           autoWhitelistMin: +b.autoWhitelistMin || 0
         }).catch(e => logger.error(`VIP Scanner error: ${e.message}`));
-        return json(res, 200, { ok: true, total: list.length });
+        return json(res, 200, { ok: true, total: list.length, skipped: totalInList - list.length });
       }
       case 'POST /api/scan/vip/stop': {
         vipScanner.stop();

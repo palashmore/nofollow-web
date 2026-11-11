@@ -70,6 +70,11 @@ test('ProfileMetadataService: set, get, query filters, and summary calculation',
   assert.equal(above10k.length, 2);
   assert.equal(above10k[0].username, 'celebrity'); // sorted desc by followers
   assert.equal(above10k[1].username, 'big_creator');
+
+  // has check
+  assert.equal(meta.has('celebrity'), true);
+  assert.equal(meta.has('big_creator'), true);
+  assert.equal(meta.has('non_existent'), false);
 });
 
 test('VipScannerEngine: scans queue and auto-whitelists verified and >10K accounts', async () => {

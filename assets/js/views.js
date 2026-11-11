@@ -1400,17 +1400,21 @@ export function vipInfluencerView(el) {
             <option value="0">All profiles in list</option>
           </select>
         </label>
-        <label class="field">Scan Delay (Safety)
+        <label class="field">Scan Delay (Speed)
           <select id="vip-interval">
+            <option value="1.5">⚡ Turbo (1.5 seconds)</option>
+            <option value="3" selected>🚀 Fast (3 seconds - Default)</option>
             <option value="5">Balanced (5 seconds)</option>
-            <option value="8" selected>Conservative (8 seconds)</option>
-            <option value="12">Relaxed (12 seconds)</option>
-            <option value="3">Fast (3 seconds)</option>
+            <option value="8">Conservative (8 seconds)</option>
           </select>
         </label>
       </div>
 
-      <div class="row" style="margin:14px 0;align-items:center;gap:12px">
+      <div class="row" style="margin:14px 0;align-items:center;gap:18px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer">
+          <input type="checkbox" id="vip-skip-scanned" checked>
+          <span><b>Skip already-scanned accounts</b> (continue scanning unscanned only)</span>
+        </label>
         <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer">
           <input type="checkbox" id="vip-auto-wl" checked>
           <span>Auto-add verified and &gt;10K accounts to <b>Protected Whitelist</b></span>
@@ -1544,10 +1548,17 @@ export function vipInfluencerView(el) {
   $('#vip-q', el).addEventListener('input', e => { searchQuery = e.target.value.trim().toLowerCase(); renderTable(); });
   $('#vip-filter', el).addEventListener('change', e => { filter = e.target.value; renderTable(); });
 
+  const savedInterval = localStorage.getItem('nf_vip_interval') || '3';
+  if ($('#vip-interval', el)) $('#vip-interval', el).value = savedInterval;
+  $('#vip-interval', el).addEventListener('change', e => {
+    localStorage.setItem('nf_vip_interval', e.target.value);
+  });
+
   $('#vip-start', el).addEventListener('click', async () => {
     const list = $('#vip-source', el).value;
     const limit = +$('#vip-limit', el).value;
-    const intervalSec = +$('#vip-interval', el).value;
+    const intervalSec = parseFloat($('#vip-interval', el).value) || 3;
+    const skipScanned = $('#vip-skip-scanned', el).checked;
     const autoWhitelistVerified = $('#vip-auto-wl', el).checked;
     const autoWhitelistMin = autoWhitelistVerified ? 10000 : 0;
 
@@ -1556,15 +1567,24 @@ export function vipInfluencerView(el) {
       $('#vip-stop', el).disabled = false;
       $('#vip-progress-box', el).style.display = 'block';
 
-      await post('/api/scan/vip/start', {
+      const res = await post('/api/scan/vip/start', {
         list,
         limit,
         intervalSec,
+        rescanAll: !skipScanned,
         autoWhitelistVerified,
         autoWhitelistMin
       });
 
-      toast(`VIP Scanner started on ${list}!`, 'ok');
+      if (res.total === 0) {
+        toast(res.message || 'All accounts in this list are already scanned!', 'ok');
+        $('#vip-start', el).disabled = false;
+        $('#vip-stop', el).disabled = true;
+        $('#vip-progress-box', el).style.display = 'none';
+        return;
+      }
+
+      toast(`VIP Scanner started: ${fmtNum(res.total)} unscanned accounts (${fmtNum(res.skipped || 0)} skipped)!`, 'ok');
     } catch (e) {
       toast(e.message, 'err');
       $('#vip-start', el).disabled = false;

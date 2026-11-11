@@ -34,6 +34,11 @@ export class ProfileMetadataService {
     return u ? (this.state.profiles[u] || null) : null;
   }
 
+  has(username) {
+    const u = normalizeUsername(username);
+    return !!(u && this.state.profiles[u]);
+  }
+
   set(username, { followersCount = null, followersText = null, isVerified = false, relationship = null } = {}) {
     const u = normalizeUsername(username);
     if (!u) return;

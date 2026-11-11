@@ -6,7 +6,7 @@ import { PATHS, REL } from '../utils/constants.mjs';
 import { isAlive } from '../utils/instance-lock.mjs';
 import { openProfile } from './profile-navigator.mjs';
 import { unfollow, cancelRequest, follow } from './action-executor.mjs';
-import { waitForState } from './relationship-detector.mjs';
+import { waitForState, waitForScannerProfile } from './relationship-detector.mjs';
 import { BrowserTabManager } from './browser-tab-manager.mjs';
 import { classifySession, takeSessionSnapshot, SESSION } from './session-detector.mjs';
 import { isBrowserClosed } from './retry-manager.mjs';
@@ -129,18 +129,17 @@ export class BrowserSessionManager {
     return out;
   }
 
-  /** Dedicated profile inspection for VIP & Influencer scanner running in its own tab. */
+  /** Dedicated fast-path profile inspection for VIP & Influencer scanner running in its own tab. */
   async inspectScanner(username, opts = {}) {
     await this.ensureBrowser();
     const page = await this.tabs.scanner();
-    const stateTimeout = opts.elementTimeout ?? this.stateTimeout;
-    const r = await openProfile(page, username, { timeout: opts.navTimeout ?? 30000, stateTimeout });
-    let out = r;
-    if (r.state === REL.AMBIGUOUS) {
-      await page.reload({ waitUntil: 'domcontentloaded', timeout: opts.navTimeout ?? 30000 });
-      out = await waitForState(page, { timeout: stateTimeout });
+    const timeout = opts.navTimeout ?? 25000;
+    const url = `https://www.instagram.com/${encodeURIComponent(username)}/`;
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+    const out = await waitForScannerProfile(page, { timeout: opts.elementTimeout ?? 4000, interval: 200 });
+    if (out.state === REL.LOGIN_REQUIRED) {
+      this.#setSession(SESSION.LOGIN_REQUIRED, { reason: 'Instagram asked for login while inspecting profile in scanner.' });
     }
-    if (out.state === REL.LOGIN_REQUIRED) this.#setSession(SESSION.LOGIN_REQUIRED, { reason: 'Instagram asked for login while inspecting profile in scanner.' });
     return out;
   }
 

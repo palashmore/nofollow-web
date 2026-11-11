@@ -133,8 +133,8 @@ export class VipScannerEngine extends EventEmitter {
         this.emit('state', this.snapshot());
 
         if (this.stopFlag) break;
-        // Polite delay between scans to respect Instagram rate limits
-        await sleep(Math.max(2, intervalSec) * 1000);
+        // Delay between scans to respect Instagram rate limits
+        await sleep(Math.max(1, intervalSec) * 1000);
       }
     } finally {
       this.active = false;

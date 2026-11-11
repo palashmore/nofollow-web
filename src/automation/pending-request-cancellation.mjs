@@ -12,8 +12,8 @@ import { STATUS, REL, FINAL, ENGINE } from '../utils/constants.mjs';
  * - Zero impact on Non-Followers automation
  */
 export class PendingRequestCancellationEngine extends AutomationController {
-  constructor({ ig, checkpoint, logger, getSettings, accountService }) {
-    super({ ig, checkpoint, logger, getSettings, job: 'cancel' });
+  constructor({ ig, checkpoint, logger, getSettings, accountService, whitelist }) {
+    super({ ig, checkpoint, logger, getSettings, job: 'cancel', whitelist });
     this.accountService = accountService;
   }
 
@@ -52,6 +52,7 @@ export class PendingRequestCancellationEngine extends AutomationController {
    */
   eligible(usernames, { includeRetry = false, order = 'oldest' } = {}) {
     const valid = usernames.filter(u => {
+      if (this.whitelist?.has(u)) return false;
       const st = this.checkpoint.statusOf(u);
       if (FINAL.has(st) || st === STATUS.CANCELLED || st === STATUS.ALREADY_CANCELLED || st === STATUS.ACCEPTED || st === STATUS.PROFILE_UNAVAILABLE) {
         return false;

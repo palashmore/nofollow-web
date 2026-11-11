@@ -65,16 +65,19 @@ export const PROFILES = Object.freeze({
 
 export const DEFAULT_SETTINGS = Object.freeze({
   executionProfile: 'balanced',
-  actionIntervalSec: 15,           // fixed wait between accounts (one action worker, no randomisation)
+  actionIntervalSec: 15,           // fixed wait between accounts
   navigationTimeoutSec: 30,        // opening a profile
   elementTimeoutSec: 10,           // waiting for the page / buttons to appear
   maxAttempts: 2,                  // bounded retries per account
   maxPerRun: 800,
   errorThreshold: 8,               // consecutive FAILED accounts before a safety pause
+  hourlyLimit: 60,                 // max actions within rolling 60 minutes before auto-cooldown
+  cooldownMinutes: 20,             // duration of auto-cooldown pause in minutes
   browserChannel: 'chrome',
   theme: 'dark',
 });
 export const SETTING_LIMITS = Object.freeze({
   actionIntervalSec: [2, 600], navigationTimeoutSec: [10, 120], elementTimeoutSec: [3, 60],
   maxAttempts: [1, 5], maxPerRun: [1, 30000], errorThreshold: [2, 50],
+  hourlyLimit: [10, 200], cooldownMinutes: [5, 120],
 });

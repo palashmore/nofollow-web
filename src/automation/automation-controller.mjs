@@ -49,12 +49,13 @@ const COUNTER = { UNFOLLOWED: 'unfollowed', CANCELLED: 'unfollowed', FOLLOWED: '
  *  - one bad profile never ends the batch.
  */
 export class AutomationController extends EventEmitter {
-  constructor({ ig, checkpoint, logger, getSettings, job = 'unfollow' }) {
+  constructor({ ig, checkpoint, logger, getSettings, job = 'unfollow', whitelist }) {
     super();
-    Object.assign(this, { ig, checkpoint, logger, getSettings });
+    Object.assign(this, { ig, checkpoint, logger, getSettings, whitelist });
     this.job = JOBS[job];
     this.status = E.IDLE; this.pauseReason = null; this.run = null;
     this.stats = this.#blank(); this.stopFlag = false; this.pauseFlag = false; this.resuming = false;
+    this.actionTimestamps = [];
   }
 
   #blank() {
@@ -65,9 +66,12 @@ export class AutomationController extends EventEmitter {
 
   snapshot() {
     const s = this.stats, cfg = this.getSettings();
+    const now = Date.now();
+    const recentHourly = (this.actionTimestamps || []).filter(t => t > now - 3600 * 1000).length;
     return {
       job: this.job.name, status: this.status, pauseReason: this.pauseReason, runId: this.run?.runId || null, ...s,
       remaining: Math.max(0, s.selected - s.processed),
+      hourlyActions: recentHourly, hourlyLimit: cfg.hourlyLimit || 60, cooldownMinutes: cfg.cooldownMinutes || 20,
       profile: cfg.executionProfile, intervalSec: cfg.actionIntervalSec, navigationTimeoutSec: cfg.navigationTimeoutSec, elementTimeoutSec: cfg.elementTimeoutSec, maxAttempts: cfg.maxAttempts,
     };
   }
@@ -84,6 +88,7 @@ export class AutomationController extends EventEmitter {
   /** Accounts a run works on: not final. FAILED / NEEDS_REVIEW wait for an explicit retry. */
   eligible(usernames, { includeRetry = false } = {}) {
     return usernames.filter(u => {
+      if (this.whitelist?.has(u) && (this.job.name === 'unfollow' || this.job.name === 'cancel')) return false;
       const st = this.checkpoint.statusOf(u);
       if (FINAL.has(st)) return false;
       return includeRetry || (st !== STATUS.FAILED && st !== STATUS.NEEDS_REVIEW);
@@ -182,9 +187,22 @@ export class AutomationController extends EventEmitter {
       this.stats.processed++; i++; this.#emit();
       if (this.stopFlag || i >= queue.length) break;
       if (this.status === E.RUNNING) {
-        this.#op('Waiting before next account', null);
-        const t0 = Date.now();   // fixed interval, re-read every tick so a settings change applies to the wait in progress
-        await sleepUntil(Infinity, () => this.stopFlag || this.pauseFlag || Date.now() - t0 >= this.getSettings().actionIntervalSec * 1000);
+        const s = this.getSettings();
+        const hourlyLimit = s.hourlyLimit || 60;
+        const now = Date.now();
+        this.actionTimestamps = (this.actionTimestamps || []).filter(t => t > now - 3600 * 1000);
+        if (this.actionTimestamps.length >= hourlyLimit) {
+          const cooldownMins = s.cooldownMinutes || 20;
+          this.logger.warn(`Hourly action limit reached (${this.actionTimestamps.length} actions in last hour). Auto-cooling down for ${cooldownMins} minutes to protect account.`);
+          this.#op(`Hourly safety cooldown: pausing for ${cooldownMins} min`, null);
+          await sleepUntil(cooldownMins * 60 * 1000, () => this.stopFlag || this.pauseFlag);
+          this.actionTimestamps = [];
+          this.logger.info('Hourly cooldown finished; resuming automation.');
+        } else {
+          this.#op('Waiting before next account', null);
+          const t0 = Date.now();   // fixed interval, re-read every tick so a settings change applies to the wait in progress
+          await sleepUntil(Infinity, () => this.stopFlag || this.pauseFlag || Date.now() - t0 >= s.actionIntervalSec * 1000);
+        }
       }
     }
   }
@@ -253,6 +271,11 @@ export class AutomationController extends EventEmitter {
   }
 
   async #decide(u, insp, s) {
+    if (this.whitelist?.has(u) && (this.job.name === 'unfollow' || this.job.name === 'cancel')) {
+      this.#record(u, STATUS.SKIPPED, 'Whitelisted account; protected from action.');
+      this.#log('INFO', u, STATUS.SKIPPED, `Whitelisted account (@${u}); protected from action and skipped.`);
+      return 'done';
+    }
     const J = this.job, { state } = insp;
     const info = insp.followsYou ? ' (note: this account follows you)' : '';
     switch (state) {
@@ -304,6 +327,8 @@ export class AutomationController extends EventEmitter {
     }
     const isSuccess = J.isDone ? J.isDone(after.state) : after.state === REL.NOT_FOLLOWING;
     if (isSuccess) {
+      this.actionTimestamps = this.actionTimestamps || [];
+      this.actionTimestamps.push(Date.now());
       this.stats.lastSuccess = u;
       const doneStatus = J.done;
       const successMsg = after.state === REL.REQUESTED && J.name === 'follow'

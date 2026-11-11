@@ -21,6 +21,7 @@ import { PostArchiveService } from './services/post-archive-service.mjs';
 import { StoriesHighlightsService } from './services/stories-highlights-service.mjs';
 import { FollowersIntelligenceService } from './services/followers-intelligence-service.mjs';
 import { ProfileSyncService } from './services/profile-sync-service.mjs';
+import { WhitelistService } from './services/whitelist-service.mjs';
 
 const PORT = Number(process.env.PORT) || 4173;
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -28,6 +29,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': '
 export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, testSettings, onShutdown } = {}) {
   ensureDir(dataDir);
   const logger = new Logger(logsDir);
+  const whitelist = new WhitelistService(path.join(dataDir, 'whitelist.json'));
   const checkpoints = {
     unfollow: new CheckpointService(path.join(dataDir, 'execution-state.json')),
     cancel: new PendingRequestStateService(path.join(dataDir, 'pending-request-state.json')),
@@ -42,9 +44,9 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
   if (testSettings) settings = { ...settings, ...testSettings };   // tests only: allows values below the UI minimums
   const session = ig || new BrowserSessionManager({ logger, channel: settings.browserChannel, lockFile: path.join(dataDir, '.browser.lock') });
   const engines = {
-    unfollow: new AutomationController({ ig: session, checkpoint: checkpoints.unfollow, logger, getSettings: () => settings, job: 'unfollow' }),
-    cancel: new PendingRequestCancellationEngine({ ig: session, checkpoint: checkpoints.cancel, logger, getSettings: () => settings, accountService: accounts }),
-    follow: new AutomationController({ ig: session, checkpoint: checkpoints.follow, logger, getSettings: () => settings, job: 'follow' }),
+    unfollow: new AutomationController({ ig: session, checkpoint: checkpoints.unfollow, logger, getSettings: () => settings, job: 'unfollow', whitelist }),
+    cancel: new PendingRequestCancellationEngine({ ig: session, checkpoint: checkpoints.cancel, logger, getSettings: () => settings, accountService: accounts, whitelist }),
+    follow: new AutomationController({ ig: session, checkpoint: checkpoints.follow, logger, getSettings: () => settings, job: 'follow', whitelist }),
   };
   const orchestrator = new CentralJobOrchestrator({
     queueFile: path.join(dataDir, 'central-queue-state.json'),
@@ -83,7 +85,8 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     intelligence: intelligence.getIntelligence(),
     profile: profileSync.getProfile(),
     postArchive: postArchive.summary(),
-    storiesHighlights: storiesHighlights.summary()
+    storiesHighlights: storiesHighlights.summary(),
+    whitelist: whitelist.list()
   });
 
   const json = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
@@ -218,6 +221,50 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         const bad = Object.entries(checkpoints).flatMap(([job, c]) => Object.values(c.state.accounts).filter(a => ['FAILED', 'NEEDS_REVIEW', 'PROFILE_UNAVAILABLE', 'ACTION_BLOCKED'].includes(a.status)).map(a => ({ job, ...a })));
         return res.end(JSON.stringify({ generatedAt: new Date().toISOString(), accounts: bad, log: logger.errorReport() }, null, 1));
       }
+      case 'GET /api/whitelist': return json(res, 200, whitelist.list());
+      case 'POST /api/whitelist/add': {
+        const b = JSON.parse(await body(req));
+        if (Array.isArray(b.usernames)) {
+          return json(res, 200, whitelist.addMany(b.usernames));
+        }
+        return json(res, 200, whitelist.add(b.username));
+      }
+      case 'POST /api/whitelist/remove': {
+        const u = JSON.parse(await body(req)).username;
+        return json(res, 200, whitelist.remove(u));
+      }
+      case 'POST /api/whitelist/toggle': {
+        const u = JSON.parse(await body(req)).username;
+        return json(res, 200, whitelist.toggle(u));
+      }
+      case 'POST /api/whitelist/clear': {
+        return json(res, 200, whitelist.clear());
+      }
+      case 'GET /api/export/csv': {
+        const targetJob = q.job;
+        const entries = [];
+        const targets = targetJob && checkpoints[targetJob] ? { [targetJob]: checkpoints[targetJob] } : checkpoints;
+        for (const [j, cp] of Object.entries(targets)) {
+          for (const a of Object.values(cp.state.accounts || {})) {
+            entries.push({
+              job: j,
+              username: a.username,
+              status: a.status,
+              previousStatus: a.previousStatus || '',
+              reason: (a.reason || '').replace(/"/g, '""'),
+              attempts: a.attempts || 1,
+              lastAttemptAt: a.lastAttemptAt || ''
+            });
+          }
+        }
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="nofollow-actions-export.csv"'
+        });
+        const header = 'Job,Username,Status,PreviousStatus,Reason,Attempts,LastAttemptAt\n';
+        const rows = entries.map(e => `"${e.job}","${e.username}","${e.status}","${e.previousStatus}","${e.reason}",${e.attempts},"${e.lastAttemptAt}"`).join('\n');
+        return res.end(header + rows);
+      }
       case 'POST /api/import/file': {
         const name = q.name; if (!name) return json(res, 400, { error: 'name required' });
         return json(res, 200, accounts.addFile(path.basename(name), await body(req)));
@@ -263,6 +310,9 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         } else {
           if (!accounts.sets) return json(res, 400, { error: 'Import your data first.' });
           list = (b.usernames || []).map(normalizeUsername).filter(u => accounts.sets.following.has(u));   // can only unfollow accounts you follow
+        }
+        if (job === 'unfollow' || job === 'cancel') {
+          list = list.filter(u => !whitelist.has(u));
         }
         return json(res, 200, await startJob(job, list, !!b.includeRetry, order));
       }

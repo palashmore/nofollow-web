@@ -4,6 +4,7 @@ const LABELS = {
   actionIntervalSec: 'Action interval (seconds)', navigationTimeoutSec: 'Navigation timeout (seconds)',
   elementTimeoutSec: 'Element detection timeout (seconds)', maxAttempts: 'Retries per account',
   maxPerRun: 'Max accounts per run', errorThreshold: 'Failure streak limit',
+  hourlyLimit: 'Hourly action limit', cooldownMinutes: 'Auto-cooldown duration (minutes)',
 };
 export const settingLabel = k => LABELS[k] || k;
 export const profileFor = n => Object.keys(PROFILES).find(k => PROFILES[k].intervalSec === n) || 'custom';

@@ -454,7 +454,10 @@ export const tableView = cfg => el => {
 /* ---------------------------------------------------------------- history */
 export function history(el) {
   el.innerHTML = `<h1>Execution history</h1><p class="sub">Every run, with its result counts. Logs are also written to the logs/ folder.</p>
-    <div class="row" style="margin-bottom:14px"><a class="btn" href="/api/report" download>Download error report</a></div>
+    <div class="row" style="margin-bottom:14px;gap:8px">
+      <a class="btn primary" href="/api/export/csv" download="nofollow-actions-export.csv">${icon('download', 14)} Export Actions History (CSV)</a>
+      <a class="btn ghost" href="/api/report" download="nofollow-error-report.json">${icon('download', 14)} Download Error Report (JSON)</a>
+    </div>
     <div class="tablewrap"><table><thead><tr><th>Started</th><th>Ended</th><th>Job</th><th>Status</th><th>Selected</th><th>Done</th><th>Already</th><th>Accepted</th><th>Unavailable</th><th>Review</th><th>Failed</th></tr></thead><tbody id="runs"></tbody></table></div>
     <h2 style="margin-top:22px">Live log</h2><div class="log" id="log" style="max-height:420px"></div>`;
   const line = e => `<div class="${e.level}"><span class="t">${new Date(e.timestamp).toLocaleTimeString()} [${e.level}]</span> ${e.username ? '@' + esc(e.username) + ': ' : ''}${esc(e.message)}</div>`;
@@ -513,6 +516,9 @@ export function settingsView(el) {
       ${num('maxAttempts', 'Retries per account', 'Bounded, 1 to 5', 1, 5)}
       ${num('maxPerRun', 'Max accounts per run', 'Hard cap for one run, 1 to 30000', 1, 30000)}
       ${num('errorThreshold', 'Failure streak limit', 'Consecutive failures before a safety pause', 2, 50)}</div>
+      <h2 style="margin-top:20px">Safety &amp; Rate Limits</h2><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
+      ${num('hourlyLimit', 'Hourly action limit', 'Max actions in rolling 60 min, 10 to 200', 10, 200)}
+      ${num('cooldownMinutes', 'Auto-cooldown duration (minutes)', 'Pause duration after reaching limit, 5 to 120', 5, 120)}</div>
       <h2 style="margin-top:20px">Application</h2><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
       <label class="field">Browser<select id="s-browserChannel"><option value="chrome">Google Chrome</option><option value="msedge">Microsoft Edge</option><option value="">Playwright Chromium</option></select><span>Applies after the app restarts</span></label>
       <label class="field">Theme<select id="s-theme"><option value="dark">Dark</option><option value="light">Light</option></select></label></div>
@@ -524,7 +530,7 @@ export function settingsView(el) {
   $('#s-actionIntervalSec', el).addEventListener('input', () => { const m = Object.entries(PROFILES).find(([, p]) => p.intervalSec === +$('#s-actionIntervalSec', el).value); $('#s-executionProfile', el).value = m ? m[0] : 'custom'; rate(); });
   rate();
   $('#save', el).addEventListener('click', async () => {
-    const body = {}; for (const k of ['actionIntervalSec', 'navigationTimeoutSec', 'elementTimeoutSec', 'maxAttempts', 'maxPerRun', 'errorThreshold']) body[k] = $(`#s-${k}`, el).value === '' ? NaN : Number($(`#s-${k}`, el).value);
+    const body = {}; for (const k of ['actionIntervalSec', 'navigationTimeoutSec', 'elementTimeoutSec', 'maxAttempts', 'maxPerRun', 'errorThreshold', 'hourlyLimit', 'cooldownMinutes']) body[k] = $(`#s-${k}`, el).value === '' ? NaN : Number($(`#s-${k}`, el).value);
     body.browserChannel = $('#s-browserChannel', el).value; body.theme = $('#s-theme', el).value;
     try { await post('/api/settings', body); await hooks.refresh(); toast('Settings saved', 'ok'); } catch (e) { toast(e.message, 'err'); }
   });
@@ -1089,6 +1095,203 @@ export function customListView(el) {
   return {
     onData: () => currentEngine?.update?.(),
     onEngine: () => currentEngine?.update?.()
+  };
+}
+
+/* ---------------------------------------------------------------- Whitelist */
+export function whitelistView(el) {
+  el.innerHTML = `<h1>Protected Whitelist</h1>
+    <p class="sub">Accounts added to this list are completely shielded. They will NEVER be unfollowed or have their follow requests cancelled, even during bulk operations.</p>
+    
+    <div class="row" style="gap:16px;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap">
+      <div class="card" style="flex:1;min-width:300px">
+        <h2>Protect Accounts</h2>
+        <p class="sub">Add individual accounts or paste a list of handles.</p>
+        <div class="row" style="gap:8px;margin-bottom:12px">
+          <input type="text" id="wl-single" placeholder="@username to protect" style="flex:1">
+          <button class="btn primary" id="wl-add-single">${icon('shield', 14)} Add</button>
+        </div>
+        <label class="field" style="margin-top:10px">Bulk Import / Paste Handles
+          <textarea id="wl-bulk" rows="3" placeholder="Paste handles separated by commas or newlines..."></textarea>
+        </label>
+        <div class="row" style="gap:8px;margin-top:10px">
+          <input type="file" id="wl-file" accept=".txt,.csv" style="display:none">
+          <button class="btn ghost sm" id="wl-file-btn">${icon('upload', 14)} Load File</button>
+          <button class="btn primary sm" id="wl-add-bulk">${icon('plus', 14)} Add All to Whitelist</button>
+        </div>
+      </div>
+
+      <div class="card" style="width:300px">
+        <h2>Shield Status</h2>
+        <div style="font-size:32px;font-weight:700;margin:12px 0 6px" id="wl-count-big">0</div>
+        <p class="sub" style="margin:0 0 14px">Protected VIP accounts</p>
+        <div class="badge ok" style="display:inline-flex;align-items:center;gap:6px">
+          ${icon('shield', 14)} Auto-Shield Active
+        </div>
+        <div style="margin-top:20px">
+          <button class="btn danger sm" id="wl-clear-all" style="width:100%">${icon('trash', 14)} Clear Whitelist</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" style="justify-content:space-between;margin-bottom:12px;gap:12px;flex-wrap:wrap">
+      <input type="text" id="wl-search" placeholder="Filter protected accounts..." style="max-width:320px;flex:1">
+      <div class="muted" id="wl-filter-count" style="align-self:center"></div>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Account</th>
+            <th>Protection Status</th>
+            <th style="text-align:right">Action</th>
+          </tr>
+        </thead>
+        <tbody id="wl-table"></tbody>
+      </table>
+    </div>`;
+
+  const parseHandles = text => {
+    if (!text) return [];
+    return Array.from(new Set(
+      text.split(/[\r\n,;\s]+/)
+        .map(t => t.trim().replace(/^@+/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/\/.*$/, '').toLowerCase())
+        .filter(u => /^[a-z0-9_][a-z0-9_.-]{0,29}$/.test(u))
+    ));
+  };
+
+  let accounts = store.data?.whitelist || [];
+  let filterText = '';
+
+  const renderList = () => {
+    const total = accounts.length;
+    const bigCount = $('#wl-count-big', el);
+    if (bigCount) bigCount.textContent = fmtNum(total);
+    const filtered = accounts.filter(u => !filterText || u.toLowerCase().includes(filterText.toLowerCase()));
+    const filterCountEl = $('#wl-filter-count', el);
+    if (filterCountEl) filterCountEl.textContent = filterText ? `${fmtNum(filtered.length)} of ${fmtNum(total)} shown` : `${fmtNum(total)} accounts`;
+
+    const tbody = $('#wl-table', el);
+    if (!tbody) return;
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="muted" style="text-align:center;padding:24px">${filterText ? 'No matching accounts found.' : 'No accounts in whitelist. Add accounts above to protect them.'}</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map((u, i) => `
+      <tr>
+        <td class="muted">${i + 1}</td>
+        <td>
+          <a href="https://www.instagram.com/${esc(u)}/" target="_blank" rel="noopener" style="font-weight:600">@${esc(u)}</a>
+        </td>
+        <td><span class="badge ok">${icon('shield', 12)} Protected</span></td>
+        <td style="text-align:right">
+          <button class="btn ghost sm danger" data-remove="${esc(u)}">Remove</button>
+        </td>
+      </tr>
+    `).join('');
+  };
+
+  $('#wl-search', el).addEventListener('input', e => {
+    filterText = e.target.value.trim();
+    renderList();
+  });
+
+  $('#wl-add-single', el).addEventListener('click', async () => {
+    const raw = $('#wl-single', el).value.trim();
+    const handles = parseHandles(raw);
+    if (!handles.length) return toast('Please enter a valid Instagram username', 'warn');
+    const u = handles[0];
+    try {
+      await post('/api/whitelist/add', { username: u });
+      accounts = await api('/api/whitelist');
+      if (store.data) store.data.whitelist = accounts;
+      $('#wl-single', el).value = '';
+      renderList();
+      toast(`@${u} added to whitelist`, 'ok');
+      await hooks.refresh();
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  });
+
+  $('#wl-single', el).addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('#wl-add-single', el).click();
+  });
+
+  $('#wl-file-btn', el).addEventListener('click', () => $('#wl-file', el).click());
+  $('#wl-file', el).addEventListener('change', e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      $('#wl-bulk', el).value = ev.target.result;
+      toast(`Loaded ${file.name}`, 'ok');
+    };
+    reader.readAsText(file);
+  });
+
+  $('#wl-add-bulk', el).addEventListener('click', async () => {
+    const handles = parseHandles($('#wl-bulk', el).value);
+    if (!handles.length) return toast('No valid handles found in textarea', 'warn');
+    try {
+      const res = await post('/api/whitelist/add', { usernames: handles });
+      accounts = await api('/api/whitelist');
+      if (store.data) store.data.whitelist = accounts;
+      $('#wl-bulk', el).value = '';
+      renderList();
+      toast(`Added ${fmtNum(res.addedCount || handles.length)} accounts to whitelist`, 'ok');
+      await hooks.refresh();
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  });
+
+  $('#wl-table', el).addEventListener('click', async e => {
+    const removeBtn = e.target.closest('[data-remove]');
+    if (!removeBtn) return;
+    const u = removeBtn.dataset.remove;
+    try {
+      await post('/api/whitelist/remove', { username: u });
+      accounts = accounts.filter(x => x !== u);
+      if (store.data) store.data.whitelist = accounts;
+      renderList();
+      toast(`@${u} removed from whitelist`, 'ok');
+      await hooks.refresh();
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  });
+
+  $('#wl-clear-all', el).addEventListener('click', async () => {
+    if (!accounts.length) return toast('Whitelist is already empty', 'warn');
+    const ok = await confirmModal({
+      title: 'Clear Entire Whitelist?',
+      body: `<p>Are you sure you want to remove all <b>${fmtNum(accounts.length)}</b> accounts from the Protected Whitelist?</p><p>These accounts will no longer be protected from bulk unfollow or cancel operations.</p>`,
+      confirmText: 'Clear Whitelist',
+      danger: true
+    });
+    if (!ok) return;
+    try {
+      await post('/api/whitelist/clear');
+      accounts = [];
+      if (store.data) store.data.whitelist = [];
+      renderList();
+      toast('Whitelist cleared', 'ok');
+      await hooks.refresh();
+    } catch (err) {
+      toast(err.message, 'err');
+    }
+  });
+
+  renderList();
+  return {
+    onData: () => {
+      accounts = store.data?.whitelist || accounts;
+      renderList();
+    }
   };
 }
 

@@ -15,6 +15,7 @@ const ROUTES = [
   { id: 'pending-requests', label: 'Pending Requests', icon: 'clock', count: k => k.cancel?.total, render: V.tableView({ id: 'pe', title: 'Pending requests', kind: 'requests', lists: [['pending', 'Sent (outgoing)'], ['incoming', 'Received (incoming)']], selectable: true, engine: 'cancel', sub: 'Follow requests you sent to private accounts can be cancelled here, one at a time. Requests other people sent to you are listed separately and never touched.' }) },
   { id: 'recently-unfollowed', label: 'Recently Unfollowed', icon: 'history', render: V.tableView({ id: 're', title: 'Recently unfollowed', list: 'recent', note: NP, sub: 'From recently_unfollowed_profiles.' }) },
   { id: 'blocked-profiles', label: 'Blocked Profiles', icon: 'ban', render: V.tableView({ id: 'bl', title: 'Blocked profiles', list: 'blocked', sub: 'From blocked_profiles.' }) },
+  { id: 'whitelist', label: 'Protected Whitelist', icon: 'shield', count: () => store.data?.whitelist?.length || 0, render: V.whitelistView },
   { sep: 'Intelligence' },
   { id: 'intelligence', label: 'Followers Intelligence', icon: 'sparkles', render: V.intelligenceView },
   { id: 'analytics', label: 'Analytics', icon: 'activity', render: V.analyticsView },

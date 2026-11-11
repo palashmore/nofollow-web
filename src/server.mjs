@@ -205,7 +205,8 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
       case 'GET /api/logs': return json(res, 200, logger.recent.slice(-Number(q.n || 200)));
       case 'GET /api/tabs': return json(res, 200, (await session.health?.())?.tabs || []);
       case 'GET /api/cancel/preview': {
-        const all = accounts.list('pending'); const eligible = accounts.cancelEligible();
+        const olderThanDays = +q.olderThanDays || 0;
+        const all = accounts.list('pending'); const eligible = accounts.cancelEligible({ olderThanDays });
         const cancelKpis = accounts.kpis()?.cancel || {};
         return json(res, 200, {
           total: all.length,
@@ -220,6 +221,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
           failed: cancelKpis.failed ?? 0,
           remaining: cancelKpis.remaining ?? eligible.length,
           order: 'OLDEST_FIRST',
+          olderThanDays,
           oldestUser: eligible[0] || null,
           oldestDate: eligible[0] && accounts.model?.requestDates?.[eligible[0]] ? new Date(accounts.model.requestDates[eligible[0]]).toISOString() : null
         });
@@ -258,6 +260,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
             q: q.q || '',
             verified: q.verified === '1',
             minFollowers: +q.minFollowers || 0,
+            minRatio: +q.minRatio || 0,
             sort: q.sort || 'followers',
             dir: q.dir || 'desc'
           })
@@ -289,6 +292,12 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         }).catch(e => logger.error(`VIP Scanner error: ${e.message}`));
         return json(res, 200, { ok: true, total: list.length, skipped: totalInList - list.length });
       }
+      case 'POST /api/scan/vip/queue': {
+        const b = JSON.parse(await body(req));
+        const usernames = (b.usernames || []).map(normalizeUsername).filter(Boolean);
+        const resQueue = vipScanner.enqueue(usernames);
+        return json(res, 200, { ok: true, ...resQueue });
+      }
       case 'POST /api/scan/vip/stop': {
         vipScanner.stop();
         return json(res, 200, { ok: true });
@@ -296,8 +305,9 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
       case 'POST /api/whitelist/bulk-by-criteria': {
         const b = JSON.parse(await body(req));
         const minFollowers = +b.minFollowers || 0;
+        const minRatio = +b.minRatio || 0;
         const verifiedOnly = !!b.verified;
-        const matches = profileMeta.query({ verified: verifiedOnly, minFollowers });
+        const matches = profileMeta.query({ verified: verifiedOnly, minFollowers, minRatio });
         const usernames = matches.map(m => m.username);
         if (!usernames.length) return json(res, 400, { error: 'No scanned profiles matched the criteria.' });
         const resWl = whitelist.addMany(usernames);
@@ -366,7 +376,8 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         } else if (job === 'cancel') {
           if (!accounts.sets) return json(res, 400, { error: 'Import your data first.' });
           const outgoing = new Set(accounts.list('pending'));   // only requests YOU sent; incoming requests and followings are never touched
-          list = b.all ? accounts.cancelEligible() : (b.usernames || []).map(normalizeUsername).filter(u => outgoing.has(u));
+          const olderThanDays = +b.olderThanDays || 0;
+          list = b.all ? accounts.cancelEligible({ olderThanDays }) : (b.usernames || []).map(normalizeUsername).filter(u => outgoing.has(u));
           const dates = accounts.model?.requestDates || {};
           const isNewest = /new(est)?/i.test(order);
           list.sort((a, b) => isNewest ? (dates[b] || 0) - (dates[a] || 0) : (dates[a] || 0) - (dates[b] || 0));

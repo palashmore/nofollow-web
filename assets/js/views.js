@@ -262,10 +262,18 @@ export const tableView = cfg => el => {
         <option value="">All statuses</option>
         <option value="WHITELISTED" ${st.status === 'WHITELISTED' ? 'selected' : ''}>⭐ Protected (Whitelisted)</option>
         <option value="VERIFIED" ${st.status === 'VERIFIED' ? 'selected' : ''}>🔵 Verified Accounts (Blue Tick)</option>
+        <option value="HIGH_AUTHORITY" ${st.status === 'HIGH_AUTHORITY' ? 'selected' : ''}>👑 High Authority (Ratio &gt; 10x)</option>
         <option value="ABOVE_10K" ${st.status === 'ABOVE_10K' ? 'selected' : ''}>🔥 Followers &gt; 10K</option>
         <option value="ABOVE_50K" ${st.status === 'ABOVE_50K' ? 'selected' : ''}>🌟 Mega Influencers &gt; 50K</option>
         ${statuses.map(s => `<option value="${s}" ${st.status === s ? 'selected' : ''}>${label(s)}</option>`).join('')}
       </select>
+      ${requests ? `<select id="age-sel" aria-label="Retention Policy">
+        <option value="" ${!st.age ? 'selected' : ''}>All Request Ages</option>
+        <option value="30d" ${st.age === '30d' ? 'selected' : ''}>⏳ Older than 30 Days</option>
+        <option value="90d" ${st.age === '90d' ? 'selected' : ''}>⏳ Older than 90 Days</option>
+        <option value="180d" ${st.age === '180d' ? 'selected' : ''}>⏳ Older than 6 Months</option>
+        <option value="365d" ${st.age === '365d' ? 'selected' : ''}>⏳ Older than 1 Year</option>
+      </select>` : ''}
       ${requests ? `<select id="sort-sel" aria-label="Sort order">
         <option value="oldest" ${st.sort === 'requestedAt' && st.dir === 'asc' ? 'selected' : ''}>Oldest First (Default)</option>
         <option value="newest" ${st.sort === 'requestedAt' && st.dir === 'desc' ? 'selected' : ''}>Newest First</option>
@@ -273,6 +281,7 @@ export const tableView = cfg => el => {
         <option value="user_desc" ${st.sort === 'username' && st.dir === 'desc' ? 'selected' : ''}>Username Z–A</option>
       </select>` : ''}
       <select id="sz" aria-label="Page size">${[25, 50, 100, 200].map(n => `<option ${st.size === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      ${requests && outgoing ? `<button class="btn sm danger" id="btn-cancel-retention" title="1-Click Auto-Cancellation Rule: Cancel all pending requests older than 90 days">⚡ Cancel &gt; 90 Days</button>` : ''}
       ${selectable ? `<span class="chip" id="selc"></span>
         <button class="btn sm" data-s="page">Select page</button><button class="btn sm" data-s="filtered">Select all filtered</button>
         <button class="btn sm" data-s="pending">${requests ? 'Select all pending' : 'Select pending only'}</button>
@@ -320,7 +329,7 @@ export const tableView = cfg => el => {
       kpi('Remaining', k.remaining, 'k-rem') +
       kpi('Received requests (info)', k.received || 0, 'k-received');
   };
-  const qs = extra => new URLSearchParams({ list: st.list, q: st.q, status: st.status, sort: st.sort, dir: st.dir, page: st.page, size: st.size, ...extra });
+  const qs = extra => new URLSearchParams({ list: st.list, q: st.q, status: st.status, age: st.age || '', sort: st.sort, dir: st.dir, page: st.page, size: st.size, ...extra });
   const cols = requests ? (selectable ? 9 : 8) : ((selectable ? 1 : 0) + 5);
   const selCount = () => { const ch = $('#selc', el); if (ch) ch.textContent = `${fmtNum(sel.size)} selected`; const ks = $('#k-sel', el); if (ks) ks.textContent = fmtNum(sel.size); panel?.update(); };
 
@@ -346,10 +355,11 @@ export const tableView = cfg => el => {
         const starBtn = `<button class="star-btn ${isWl ? 'active' : ''}" data-star="${esc(r.username)}" title="${isWl ? 'Protected in Whitelist - Click to unprotect' : 'Click to star / protect in Whitelist'}" aria-label="Star / Whitelist">${icon('star', 15)}</button>`;
         const verifiedBadge = r.isVerified ? `<span class="chip" style="color:#0284c7;border-color:rgba(2,132,199,0.3);background:rgba(2,132,199,0.08);padding:1px 5px;font-size:10px;margin-left:3px" title="Verified Creator (Blue Tick)">🔵 Verified</span>` : '';
         const followersBadge = (r.followersText || r.followersCount) ? `<span class="chip" style="padding:1px 5px;font-size:10px;margin-left:3px" title="${fmtNum(r.followersCount)} followers">👥 ${esc(r.followersText || (r.followersCount >= 1e6 ? (r.followersCount/1e6).toFixed(1)+'M' : r.followersCount >= 1e3 ? (r.followersCount/1e3).toFixed(1)+'K' : r.followersCount))}</span>` : '';
+        const authorityBadge = (r.authorityRatio && r.authorityRatio > 0) ? `<span class="chip ${r.authorityRatio >= 10 ? 'ok' : ''}" style="padding:1px 5px;font-size:10px;margin-left:3px;${r.authorityRatio >= 10 ? 'font-weight:bold;border-color:gold;' : ''}" title="Authority Ratio: ${r.authorityRatio.toFixed(1)}x">👑 ${r.authorityRatio.toFixed(1)}x</span>` : '';
         return `<tr>
         ${selectable ? `<td><input type="checkbox" data-u="${esc(r.username)}" ${sel.has(r.username) ? 'checked' : ''} aria-label="Select ${esc(r.username)}"></td>` : ''}
         ${requests ? `
-          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${verifiedBadge}${followersBadge}${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:3px">⭐ Protected</span>` : ''}</td>
+          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${verifiedBadge}${followersBadge}${authorityBadge}${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:3px">⭐ Protected</span>` : ''}</td>
           <td>${esc(r.displayName || '—')}</td>
           <td class="muted">${fmtDate(r.requestedAt)}</td>
           <td><span class="chip" title="${esc(r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '')}">${formatAge(r.requestedAt)}</span></td>
@@ -360,7 +370,7 @@ export const tableView = cfg => el => {
               <a class="btn sm ghost" href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">Open</a>
               ${r.reason || r.screenshot ? `<button class="btn sm ghost" data-i="${esc(r.username)}">Inspect</button>` : ''}</td>
         ` : `
-          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${verifiedBadge}${followersBadge}${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:3px">⭐ Protected</span>` : ''}</td>
+          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${verifiedBadge}${followersBadge}${authorityBadge}${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:3px">⭐ Protected</span>` : ''}</td>
           <td>${esc(r.relationship)}</td><td class="muted">${esc(r.accountStatus)}</td><td>${badge(r.status)}</td>
           <td class="muted">${fmtDate(r.lastAttemptAt)}</td>
           <td>
@@ -383,6 +393,13 @@ export const tableView = cfg => el => {
   $('#q', el).addEventListener('input', debounce(e => { st.q = e.target.value; reload(); }, 250));
   $('#st', el).addEventListener('change', e => { st.status = e.target.value; reload(); });
   $('#sz', el).addEventListener('change', e => { st.size = +e.target.value; reload(); });
+  const ageSel = $('#age-sel', el);
+  if (ageSel) {
+    ageSel.addEventListener('change', e => {
+      st.age = e.target.value;
+      reload();
+    });
+  }
   const sortSel = $('#sort-sel', el);
   if (sortSel) {
     sortSel.addEventListener('change', e => {
@@ -392,6 +409,36 @@ export const tableView = cfg => el => {
       else if (v === 'user_asc') { st.sort = 'username'; st.dir = 'asc'; }
       else if (v === 'user_desc') { st.sort = 'username'; st.dir = 'desc'; }
       reload();
+    });
+  }
+  const btnCancelRetention = $('#btn-cancel-retention', el);
+  if (btnCancelRetention) {
+    btnCancelRetention.addEventListener('click', async () => {
+      const days = st.age === '30d' ? 30 : st.age === '180d' ? 180 : st.age === '365d' ? 365 : 90;
+      let prev;
+      try {
+        prev = await api(`/api/cancel/preview?olderThanDays=${days}`);
+      } catch (e) {
+        toast('Failed to load cancellation preview: ' + e.message, 'err');
+        return;
+      }
+      if (!prev || prev.eligible === 0) {
+        toast(`No pending requests older than ${days} days found to cancel!`, 'ok');
+        return;
+      }
+      if (!await confirmModal({
+        title: `Auto-Cancellation Rule: Cancel requests older than ${days} days?`,
+        danger: true,
+        confirmText: `Confirm Cancel ${fmtNum(prev.eligible)} Requests`,
+        body: `<p>This will start background cancellation for all <b>${fmtNum(prev.eligible)}</b> pending requests older than <b>${days} days</b> (processed oldest first).</p><p>Accounts in your Protected Whitelist will never be touched.</p>`
+      })) return;
+      try {
+        await post('/api/run/start', { mode: 'cancel', all: true, olderThanDays: days, confirm: true, order: 'oldest' });
+        toast(`Auto-cancellation started for ${fmtNum(prev.eligible)} requests (> ${days}d)`, 'ok');
+        await hooks.refresh();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
     });
   }
   el.addEventListener('click', async ev => {
@@ -1375,7 +1422,7 @@ export function vipInfluencerView(el) {
   const followersCount = kpis.followers || 0;
 
   el.innerHTML = `<h1>VIP &amp; Influencer Finder</h1>
-    <p class="sub">Scan your following and followers to automatically detect Blue Tick verified creators and accounts with &gt;10K or &gt;50K followers.</p>
+    <p class="sub">Scan your following and followers to automatically detect Blue Tick verified creators, high-authority accounts (ratio &gt; 10x), and accounts with &gt;10K or &gt;50K followers.</p>
 
     <!-- KPI Grid -->
     <div class="grid kpis" style="margin-bottom:18px">
@@ -1383,6 +1430,7 @@ export function vipInfluencerView(el) {
       ${kpiCard('Verified (Blue Tick)', 0, 'vip-kpi-verified')}
       ${kpiCard('Creators (> 10K)', 0, 'vip-kpi-10k')}
       ${kpiCard('Mega Influencers (> 50K)', 0, 'vip-kpi-50k')}
+      ${kpiCard('High Authority (> 10x)', 0, 'vip-kpi-authority')}
     </div>
 
     <!-- Scanner Control Card -->
@@ -1427,9 +1475,10 @@ export function vipInfluencerView(el) {
         </label>
       </div>
 
-      <div class="row" style="gap:8px;margin-top:16px">
+      <div class="row" style="gap:8px;margin-top:16px;flex-wrap:wrap">
         <button class="btn primary" id="vip-start">${icon('sparkles', 14)} Start VIP Scanner</button>
         <button class="btn danger" id="vip-stop" disabled>${icon('ban', 14)} Stop Scanner</button>
+        <button class="btn ghost" id="vip-btn-enqueue" title="Add usernames to the live background scanning queue without interrupting">${icon('plus', 14)} Enqueue Accounts</button>
       </div>
 
       <!-- Live progress status -->
@@ -1452,6 +1501,7 @@ export function vipInfluencerView(el) {
         <button class="btn primary-ghost" id="vip-wl-verified">${icon('shield', 14)} ⭐ Whitelist All Verified (Blue Tick)</button>
         <button class="btn primary-ghost" id="vip-wl-10k">${icon('shield', 14)} ⭐ Whitelist All &gt; 10K Followers</button>
         <button class="btn primary-ghost" id="vip-wl-50k">${icon('shield', 14)} ⭐ Whitelist All &gt; 50K Followers</button>
+        <button class="btn primary-ghost" id="vip-wl-authority">${icon('shield', 14)} 👑 Whitelist All High Authority (&gt; 10x)</button>
       </div>
     </div>
 
@@ -1461,6 +1511,7 @@ export function vipInfluencerView(el) {
         <input type="search" id="vip-q" placeholder="Search accounts..." style="max-width:240px">
         <select id="vip-filter">
           <option value="all">All Scanned Profiles</option>
+          <option value="authority">👑 High Authority (Ratio &gt; 10x)</option>
           <option value="verified">Verified Only (Blue Tick)</option>
           <option value="10k">Followers &gt; 10,000</option>
           <option value="50k">Mega Influencers (&gt; 50,000)</option>
@@ -1476,6 +1527,7 @@ export function vipInfluencerView(el) {
             <th>#</th>
             <th>Account</th>
             <th>Followers</th>
+            <th>Authority Ratio</th>
             <th>Verification</th>
             <th>Relationship</th>
             <th>Whitelisted</th>
@@ -1498,10 +1550,12 @@ export function vipInfluencerView(el) {
       const vc = $('#vip-kpi-verified', el);
       const k10 = $('#vip-kpi-10k', el);
       const k50 = $('#vip-kpi-50k', el);
+      const auth = $('#vip-kpi-authority', el);
       if (sc) sc.textContent = fmtNum(sum.totalScanned);
       if (vc) vc.textContent = fmtNum(sum.verifiedCount);
       if (k10) k10.textContent = fmtNum(sum.above10k);
       if (k50) k50.textContent = fmtNum(sum.above50k);
+      if (auth) auth.textContent = fmtNum(sum.highAuthorityCount || 0);
       profiles = res.profiles || [];
       renderTable();
     } catch {}
@@ -1511,6 +1565,7 @@ export function vipInfluencerView(el) {
     const wl = store.data?.whitelist || [];
     let list = profiles.filter(p => {
       if (searchQuery && !p.username.includes(searchQuery)) return false;
+      if (filter === 'authority') return (p.authorityRatio || 0) >= 10;
       if (filter === 'verified') return p.isVerified;
       if (filter === '10k') return (p.followersCount || 0) >= 10000;
       if (filter === '50k') return (p.followersCount || 0) >= 50000;
@@ -1523,7 +1578,7 @@ export function vipInfluencerView(el) {
     if (!tbody) return;
 
     if (!list.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">${profiles.length ? 'No accounts match the selected filter.' : 'No profiles scanned yet. Click "Start VIP Scanner" above to begin scanning.'}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="muted" style="text-align:center;padding:24px">${profiles.length ? 'No accounts match the selected filter.' : 'No profiles scanned yet. Click "Start VIP Scanner" above to begin scanning.'}</td></tr>`;
       return;
     }
 
@@ -1531,6 +1586,19 @@ export function vipInfluencerView(el) {
       const isWl = wl.includes(p.username.toLowerCase());
       const fText = p.followersText || (p.followersCount >= 1e6 ? (p.followersCount/1e6).toFixed(1)+'M' : p.followersCount >= 1e3 ? (p.followersCount/1e3).toFixed(1)+'K' : (p.followersCount != null ? String(p.followersCount) : '—'));
       const starBtn = `<button class="star-btn ${isWl ? 'active' : ''}" data-star="${esc(p.username)}" title="${isWl ? 'Protected in Whitelist - Click to unprotect' : 'Click to add to Protected Whitelist'}" aria-label="Toggle Whitelist">${icon('star', 15)}</button>`;
+
+      let authBadge = '<span class="muted">—</span>';
+      if (p.authorityRatio != null && p.authorityRatio > 0) {
+        const ratioVal = p.authorityRatio.toFixed(1);
+        if (p.authorityRatio >= 10) {
+          authBadge = `<span class="chip ok" style="font-weight:700;border-color:gold;padding:1px 6px;font-size:11px" title="${ratioVal}x (${fmtNum(p.followersCount)} followers / ${fmtNum(p.followingCount || 1)} following)">👑 ${ratioVal}x High</span>`;
+        } else if (p.authorityRatio >= 1) {
+          authBadge = `<span class="chip" style="padding:1px 6px;font-size:11px" title="${ratioVal}x (${fmtNum(p.followersCount)} followers / ${fmtNum(p.followingCount || 1)} following)">⚖️ ${ratioVal}x</span>`;
+        } else {
+          authBadge = `<span class="chip muted" style="padding:1px 6px;font-size:11px" title="${ratioVal}x (${fmtNum(p.followersCount)} followers / ${fmtNum(p.followingCount || 1)} following)">🔄 ${ratioVal}x</span>`;
+        }
+      }
+
       return `
         <tr>
           <td class="muted">${i + 1}</td>
@@ -1539,6 +1607,7 @@ export function vipInfluencerView(el) {
             <a href="https://www.instagram.com/${esc(p.username)}/" target="_blank" rel="noopener noreferrer" style="font-weight:600">@${esc(p.username)}</a>
           </td>
           <td><b>${esc(fText)}</b></td>
+          <td>${authBadge}</td>
           <td>${p.isVerified ? `<span class="chip" style="color:#0284c7;border-color:rgba(2,132,199,0.3);background:rgba(2,132,199,0.08);padding:1px 6px;font-size:11px">🔵 Verified</span>` : '<span class="muted">—</span>'}</td>
           <td><span class="chip">${esc(p.relationship || 'Following')}</span></td>
           <td>${isWl ? `<span class="chip ok" style="padding:1px 6px;font-size:10px">⭐ Protected</span>` : '<span class="muted">No</span>'}</td>
@@ -1598,6 +1667,19 @@ export function vipInfluencerView(el) {
     }
   });
 
+  $('#vip-btn-enqueue', el)?.addEventListener('click', async () => {
+    const text = prompt('Enter Instagram usernames to add to the background scan queue (separated by commas or spaces):');
+    if (!text) return;
+    const usernames = text.split(/[\s,]+/).map(s => s.trim().replace(/^@/, '')).filter(Boolean);
+    if (!usernames.length) return;
+    try {
+      const res = await post('/api/scan/vip/queue', { usernames });
+      toast(`Enqueued ${fmtNum(res.enqueuedCount || usernames.length)} accounts into background queue (Queue Total: ${fmtNum(res.queueRemaining || 0)})`, 'ok');
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  });
+
   $('#vip-stop', el).addEventListener('click', async () => {
     try {
       await post('/api/scan/vip/stop');
@@ -1635,6 +1717,17 @@ export function vipInfluencerView(el) {
     try {
       const res = await post('/api/whitelist/bulk-by-criteria', { minFollowers: 50000 });
       toast(`⭐ Protected ${fmtNum(res.added || 0)} mega accounts with >50K followers`, 'ok');
+      await hooks.refresh();
+      await refreshData();
+    } catch (e) {
+      toast(e.message, 'err');
+    }
+  });
+
+  $('#vip-wl-authority', el).addEventListener('click', async () => {
+    try {
+      const res = await post('/api/whitelist/bulk-by-criteria', { minRatio: 10 });
+      toast(`⭐ Protected ${fmtNum(res.added || 0)} high-authority accounts (ratio > 10x) in Whitelist`, 'ok');
       await hooks.refresh();
       await refreshData();
     } catch (e) {
@@ -1687,7 +1780,8 @@ export function vipInfluencerView(el) {
       if (startBtn) startBtn.disabled = true;
       if (stopBtn) stopBtn.disabled = false;
       if (box) box.style.display = 'block';
-      if (lbl) lbl.textContent = snap.current ? `Scanning @${snap.current}...` : 'Scanning in progress...';
+      const queueSuffix = snap.queueRemaining != null ? ` (${fmtNum(snap.queueRemaining)} in queue)` : '';
+      if (lbl) lbl.textContent = snap.current ? `Scanning @${snap.current}...${queueSuffix}` : `Scanning in progress...${queueSuffix}`;
       if (chip) chip.textContent = `${fmtNum(snap.processed)} / ${fmtNum(snap.total)}`;
       const pct = snap.total > 0 ? Math.round((snap.processed / snap.total) * 100) : 0;
       if (bar) bar.style.width = `${pct}%`;
@@ -1715,7 +1809,7 @@ export function vipInfluencerView(el) {
       updateScannerState(snap);
     },
     onVipAccount: acc => {
-      // Live increment the 4 KPI metric cards immediately
+      // Live increment the 5 KPI metric cards immediately
       const sc = $('#vip-kpi-scanned', el);
       if (sc) {
         const cur = parseInt((sc.textContent || '0').replace(/,/g, ''), 10) || 0;
@@ -1740,6 +1834,13 @@ export function vipInfluencerView(el) {
         if (k50) {
           const cur = parseInt((k50.textContent || '0').replace(/,/g, ''), 10) || 0;
           k50.textContent = fmtNum(cur + 1);
+        }
+      }
+      if ((acc.authorityRatio || 0) >= 10) {
+        const auth = $('#vip-kpi-authority', el);
+        if (auth) {
+          const cur = parseInt((auth.textContent || '0').replace(/,/g, ''), 10) || 0;
+          auth.textContent = fmtNum(cur + 1);
         }
       }
       const lbl = $('#vip-progress-label', el);

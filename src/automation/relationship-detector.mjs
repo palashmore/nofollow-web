@@ -37,12 +37,23 @@ export function classify(snap) {
   const requested = buttons.some(b => REQUESTED_RE.test(b));
   const follow = buttons.some(b => FOLLOW_RE.test(b));
   const hasRel = following || requested || follow;
+  const followersCount = snap.followersCount ?? null;
+  const followingCount = snap.followingCount ?? null;
+  let authorityRatio = snap.authorityRatio ?? null;
+  if (authorityRatio === null && followersCount !== null) {
+    const denom = (followingCount && followingCount > 0) ? followingCount : 1;
+    authorityRatio = Math.round((followersCount / denom) * 10) / 10;
+  }
+
   const info = {
     followsYou: !!snap.followsYou,
     isPrivate: !!snap.isPrivate,
     isVerified: !!snap.isVerified,
-    followersCount: snap.followersCount ?? null,
-    followersText: snap.followersText || null
+    followersCount,
+    followersText: snap.followersText || (followersCount ? String(followersCount) : null),
+    followingCount,
+    followingText: snap.followingText || (followingCount ? String(followingCount) : null),
+    authorityRatio
   };
 
   if (snap.hasLoginForm || /\/accounts\/(login|emailsignup)/.test(snap.url || '')) return { state: REL.LOGIN_REQUIRED, ...info };
@@ -74,31 +85,55 @@ export function takeSnapshot(page) {
       document.querySelector('header svg[aria-label*="Verified" i], svg[aria-label*="Verified" i], [title*="Verified" i]')
     );
 
-    // Follower count extraction
+    // Follower and Following counts extraction
     let followersText = '';
     let followersCount = null;
+    let followingText = '';
+    let followingCount = null;
+
     const metaDesc = document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
                      document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
-    const m = metaDesc.match(/([\d.,]+[KMkm]?)\s+Followers/i);
-    if (m) {
-      followersText = m[1];
+
+    const mFollowers = metaDesc.match(/([\d.,]+[KMkm]?)\s+Followers/i);
+    if (mFollowers) {
+      followersText = mFollowers[1];
     } else {
       const followersLink = document.querySelector('a[href$="/followers/"], a[href*="/followers"]');
       if (followersLink) {
         followersText = followersLink.innerText.split('\n')[0].replace(/followers/i, '').trim();
       }
     }
-    if (followersText) {
-      const clean = followersText.trim().toUpperCase().replace(/,/g, '');
+
+    const mFollowing = metaDesc.match(/([\d.,]+[KMkm]?)\s+Following/i);
+    if (mFollowing) {
+      followingText = mFollowing[1];
+    } else {
+      const followingLink = document.querySelector('a[href$="/following/"], a[href*="/following"]');
+      if (followingLink) {
+        followingText = followingLink.innerText.split('\n')[0].replace(/following/i, '').trim();
+      }
+    }
+
+    const parseNum = text => {
+      if (!text) return null;
+      const clean = text.trim().toUpperCase().replace(/,/g, '');
       const numMatch = clean.match(/^([\d.]+)\s*([KM])?$/);
       if (numMatch) {
         const val = parseFloat(numMatch[1]);
         if (!isNaN(val)) {
-          followersCount = numMatch[2] === 'M' ? Math.round(val * 1000000) : numMatch[2] === 'K' ? Math.round(val * 1000) : Math.round(val);
+          return numMatch[2] === 'M' ? Math.round(val * 1000000) : numMatch[2] === 'K' ? Math.round(val * 1000) : Math.round(val);
         }
-      } else {
-        followersCount = parseInt(clean.replace(/[^\d]/g, ''), 10) || null;
       }
+      return parseInt(clean.replace(/[^\d]/g, ''), 10) || null;
+    };
+
+    followersCount = parseNum(followersText);
+    followingCount = parseNum(followingText);
+
+    let authorityRatio = null;
+    if (followersCount !== null) {
+      const denom = (followingCount && followingCount > 0) ? followingCount : 1;
+      authorityRatio = Math.round((followersCount / denom) * 10) / 10;
     }
 
     return {
@@ -106,7 +141,12 @@ export function takeSnapshot(page) {
       dialogText: [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].map(d => d.innerText).join('\n').slice(0, 3000),
       hasLoginForm: !!document.querySelector('input[name=password]'),
       followsYou: /Follows you/i.test(body), isPrivate: /This account is private/i.test(body),
-      isVerified, followersCount, followersText: followersText || (followersCount ? String(followersCount) : null)
+      isVerified,
+      followersCount,
+      followersText: followersText || (followersCount ? String(followersCount) : null),
+      followingCount,
+      followingText: followingText || (followingCount ? String(followingCount) : null),
+      authorityRatio
     };
   });
 }

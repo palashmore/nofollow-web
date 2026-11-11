@@ -50,9 +50,15 @@ export class PendingRequestCancellationEngine extends AutomationController {
   /**
    * Filters and sorts eligible pending requests by specified order (defaults to oldest first).
    */
-  eligible(usernames, { includeRetry = false, order = 'oldest' } = {}) {
+  eligible(usernames, { includeRetry = false, order = 'oldest', olderThanDays = 0 } = {}) {
+    const dates = this.accountService?.model?.requestDates || {};
+    const cutoff = olderThanDays > 0 ? Date.now() - (olderThanDays * 86400 * 1000) : Infinity;
     const valid = usernames.filter(u => {
       if (this.whitelist?.has(u)) return false;
+      if (olderThanDays > 0) {
+        const d = dates[u];
+        if (!d || d > cutoff) return false;
+      }
       const st = this.checkpoint.statusOf(u);
       if (FINAL.has(st) || st === STATUS.CANCELLED || st === STATUS.ALREADY_CANCELLED || st === STATUS.ACCEPTED || st === STATUS.PROFILE_UNAVAILABLE) {
         return false;
@@ -67,12 +73,21 @@ export class PendingRequestCancellationEngine extends AutomationController {
   /**
    * Starts a cancellation run on selected accounts in specified order (oldest or newest first).
    */
-  async start(usernames, { includeRetry = false, order = 'oldest' } = {}) {
+  async start(usernames, { includeRetry = false, order = 'oldest', olderThanDays = 0 } = {}) {
+    const dates = this.accountService?.model?.requestDates || {};
+    const cutoff = olderThanDays > 0 ? Date.now() - (olderThanDays * 86400 * 1000) : Infinity;
+    let list = [...new Set(usernames)];
+    if (olderThanDays > 0) {
+      list = list.filter(u => {
+        const d = dates[u];
+        return d && d <= cutoff;
+      });
+    }
     const isNewest = /new(est)?/i.test(order);
     this.processingOrder = isNewest ? 'NEWEST_FIRST' : 'OLDEST_FIRST';
     const sorted = isNewest
-      ? this.sortNewestFirst([...new Set(usernames)])
-      : this.sortOldestFirst([...new Set(usernames)]);
+      ? this.sortNewestFirst(list)
+      : this.sortOldestFirst(list);
     return super.start(sorted, { includeRetry });
   }
 

@@ -39,14 +39,24 @@ export class ProfileMetadataService {
     return !!(u && this.state.profiles[u]);
   }
 
-  set(username, { followersCount = null, followersText = null, isVerified = false, relationship = null } = {}) {
+  set(username, { followersCount = null, followersText = null, followingCount = null, followingText = null, authorityRatio = null, isVerified = false, relationship = null } = {}) {
     const u = normalizeUsername(username);
     if (!u) return;
     const prev = this.state.profiles[u] || {};
+    const fCount = followersCount !== null ? followersCount : (prev.followersCount ?? null);
+    const gCount = followingCount !== null ? followingCount : (prev.followingCount ?? null);
+    let ratio = authorityRatio !== null ? authorityRatio : (prev.authorityRatio ?? null);
+    if (ratio === null && fCount !== null) {
+      const denom = (gCount && gCount > 0) ? gCount : 1;
+      ratio = Math.round((fCount / denom) * 10) / 10;
+    }
     this.state.profiles[u] = {
       username: u,
-      followersCount: followersCount !== null ? followersCount : (prev.followersCount ?? null),
-      followersText: followersText || prev.followersText || (followersCount ? String(followersCount) : null),
+      followersCount: fCount,
+      followersText: followersText || prev.followersText || (fCount ? String(fCount) : null),
+      followingCount: gCount,
+      followingText: followingText || prev.followingText || (gCount ? String(gCount) : null),
+      authorityRatio: ratio,
       isVerified: typeof isVerified === 'boolean' ? isVerified : (prev.isVerified ?? false),
       relationship: relationship || prev.relationship || null,
       scannedAt: new Date().toISOString()
@@ -60,7 +70,7 @@ export class ProfileMetadataService {
     return Object.values(this.state.profiles);
   }
 
-  query({ verified = false, minFollowers = 0, q = '', sort = 'followers', dir = 'desc' } = {}) {
+  query({ verified = false, minFollowers = 0, minRatio = 0, q = '', sort = 'followers', dir = 'desc' } = {}) {
     let list = Object.values(this.state.profiles);
     const needle = q.trim().toLowerCase();
     if (needle) {
@@ -72,8 +82,14 @@ export class ProfileMetadataService {
     if (minFollowers > 0) {
       list = list.filter(p => (p.followersCount || 0) >= minFollowers);
     }
+    if (minRatio > 0) {
+      list = list.filter(p => (p.authorityRatio || 0) >= minRatio);
+    }
     const mul = dir === 'asc' ? 1 : -1;
     list.sort((a, b) => {
+      if (sort === 'ratio') {
+        return mul * ((a.authorityRatio || 0) - (b.authorityRatio || 0));
+      }
       if (sort === 'followers') {
         return mul * ((a.followersCount || 0) - (b.followersCount || 0));
       }
@@ -87,17 +103,20 @@ export class ProfileMetadataService {
     let verifiedCount = 0;
     let above10k = 0;
     let above50k = 0;
+    let highAuthorityCount = 0;
     for (const p of all) {
       if (p.isVerified) verifiedCount++;
       const c = p.followersCount || 0;
       if (c >= 10000) above10k++;
       if (c >= 50000) above50k++;
+      if ((p.authorityRatio || 0) >= 10) highAuthorityCount++;
     }
     return {
       totalScanned: all.length,
       verifiedCount,
       above10k,
-      above50k
+      above50k,
+      highAuthorityCount
     };
   }
 }

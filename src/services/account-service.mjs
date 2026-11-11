@@ -58,7 +58,7 @@ export class AccountService {
   }
 
   /** Filter / sort / paginate one list. `ids` returns every matching username (for "select all filtered"). */
-  query({ list = 'nonFollowers', q = '', status = '', sort = '', dir = 'asc', page = 1, size = 50, ids = false }) {
+  query({ list = 'nonFollowers', q = '', status = '', age = '', sort = '', dir = 'asc', page = 1, size = 50, ids = false }) {
     const needle = q.trim().toLowerCase();
     const cp = list === 'pending' ? this.cps.cancel : this.cps.unfollow;
     let rows = this.list(list).map(u => {
@@ -77,6 +77,9 @@ export class AccountService {
         isVerified: meta?.isVerified ?? false,
         followersCount: meta?.followersCount ?? null,
         followersText: meta?.followersText ?? null,
+        followingCount: meta?.followingCount ?? null,
+        followingText: meta?.followingText ?? null,
+        authorityRatio: meta?.authorityRatio ?? null,
         lastAttemptAt: a?.lastAttemptAt || null,
         reason: a?.reason || null,
         screenshot: a?.screenshot || null,
@@ -94,10 +97,24 @@ export class AccountService {
       rows = rows.filter(r => (r.followersCount || 0) >= 10000);
     } else if (status === 'ABOVE_50K') {
       rows = rows.filter(r => (r.followersCount || 0) >= 50000);
+    } else if (status === 'HIGH_AUTHORITY') {
+      rows = rows.filter(r => (r.authorityRatio || 0) >= 10);
     } else if (status) {
       rows = rows.filter(r => r.status === status);
     }
-    const validSorts = ['username', 'displayName', 'status', 'lastAttemptAt', 'relationship', 'requestedAt', 'followersCount'];
+    if (age) {
+      const now = Date.now();
+      const dayMs = 86400 * 1000;
+      let minAgeMs = 0;
+      if (age === '30d') minAgeMs = 30 * dayMs;
+      else if (age === '90d') minAgeMs = 90 * dayMs;
+      else if (age === '180d') minAgeMs = 180 * dayMs;
+      else if (age === '365d') minAgeMs = 365 * dayMs;
+      if (minAgeMs > 0) {
+        rows = rows.filter(r => r.requestedAt && (now - r.requestedAt) >= minAgeMs);
+      }
+    }
+    const validSorts = ['username', 'displayName', 'status', 'lastAttemptAt', 'relationship', 'requestedAt', 'followersCount', 'authorityRatio'];
     const k = validSorts.includes(sort) ? sort : (list === 'pending' ? 'requestedAt' : 'username');
     const mul = dir === 'desc' ? -1 : 1;
     if (k === 'requestedAt') {
@@ -163,9 +180,18 @@ export class AccountService {
   }
 
   /** Outgoing pending requests that a "cancel all" run would still process, sorted oldest first. */
-  cancelEligible() {
+  cancelEligible({ olderThanDays = 0 } = {}) {
     const dates = this.model?.requestDates || {};
-    const eligible = this.list('pending').filter(u => !this.cps.cancel.isFinal(u));
+    const cutoff = olderThanDays > 0 ? Date.now() - (olderThanDays * 86400 * 1000) : Infinity;
+    const eligible = this.list('pending').filter(u => {
+      if (this.cps.cancel.isFinal(u)) return false;
+      if (olderThanDays > 0) {
+        const d = dates[u];
+        if (!d) return false;
+        return d <= cutoff;
+      }
+      return true;
+    });
     return eligible.sort((a, b) => (dates[a] || 0) - (dates[b] || 0));
   }
 }

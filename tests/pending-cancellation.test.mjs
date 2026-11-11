@@ -155,3 +155,38 @@ test('Pending cancellation: Instagram action block pauses run for safety', async
   await untilIdle(engine);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('Pending cancellation: retention policy filters requests olderThanDays', async () => {
+  const now = Date.now();
+  const dayMs = 86400 * 1000;
+  const userDates = {
+    user_recent_5d: now - (5 * dayMs),
+    user_old_100d: now - (100 * dayMs),
+    user_ancient_400d: now - (400 * dayMs)
+  };
+
+  const { engine, ig, dir } = setupPendingEngine(
+    {
+      user_recent_5d: 'REQUESTED',
+      user_old_100d: 'REQUESTED',
+      user_ancient_400d: 'REQUESTED'
+    },
+    {},
+    {},
+    userDates
+  );
+
+  // Filter with olderThanDays = 90
+  const eligible = engine.eligible(['user_recent_5d', 'user_old_100d', 'user_ancient_400d'], { olderThanDays: 90 });
+  assert.deepEqual(eligible, ['user_ancient_400d', 'user_old_100d'], 'only requests >90 days old should be eligible, sorted oldest first');
+
+  // Start with olderThanDays = 90
+  await engine.start(['user_recent_5d', 'user_old_100d', 'user_ancient_400d'], { olderThanDays: 90 });
+  await untilIdle(engine);
+
+  assert.deepEqual(ig.calls.inspect, ['user_ancient_400d', 'user_old_100d']);
+  assert.equal(ig.calls.inspect.includes('user_recent_5d'), false, 'recent request was skipped by retention rule');
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+

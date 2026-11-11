@@ -20,12 +20,14 @@ export class VipScannerEngine extends EventEmitter {
     this.active = false;
     this.stopFlag = false;
     this.pauseFlag = false;
+    this.queue = [];
     this.stats = {
       total: 0,
       processed: 0,
       verified: 0,
       above10k: 0,
       above50k: 0,
+      highAuthority: 0,
       current: null
     };
   }
@@ -34,13 +36,23 @@ export class VipScannerEngine extends EventEmitter {
     return {
       active: this.active,
       paused: this.pauseFlag,
+      queueRemaining: this.queue.length,
       ...this.stats
     };
+  }
+
+  enqueue(usernames) {
+    const fresh = usernames.map(normalizeUsername).filter(u => u && !this.queue.includes(u));
+    this.queue.push(...fresh);
+    this.stats.total = this.stats.processed + this.queue.length;
+    this.emit('state', this.snapshot());
+    return { added: fresh.length, enqueuedCount: fresh.length, total: this.stats.total, remaining: this.queue.length, queueRemaining: this.queue.length };
   }
 
   stop() {
     this.stopFlag = true;
     this.active = false;
+    this.queue = [];
     this.emit('state', this.snapshot());
   }
 
@@ -56,30 +68,32 @@ export class VipScannerEngine extends EventEmitter {
 
   async scan(usernames, { intervalSec = 5, autoWhitelistVerified = false, autoWhitelistMin = 0 } = {}) {
     if (this.active) throw new Error('VIP Scanner is already running.');
-    const queue = Array.from(new Set(usernames.map(normalizeUsername).filter(Boolean)));
-    if (!queue.length) throw new Error('No valid usernames to scan.');
+    this.queue = Array.from(new Set(usernames.map(normalizeUsername).filter(Boolean)));
+    if (!this.queue.length) throw new Error('No valid usernames to scan.');
 
     this.active = true;
     this.stopFlag = false;
     this.pauseFlag = false;
     this.stats = {
-      total: queue.length,
+      total: this.queue.length,
       processed: 0,
       verified: 0,
       above10k: 0,
       above50k: 0,
+      highAuthority: 0,
       current: null
     };
     this.emit('state', this.snapshot());
 
     try {
-      for (const u of queue) {
+      while (this.queue.length > 0) {
         if (this.stopFlag) break;
         while (this.pauseFlag && !this.stopFlag) {
           await sleep(500);
         }
         if (this.stopFlag) break;
 
+        const u = this.queue.shift();
         this.stats.current = u;
         this.emit('state', this.snapshot());
 
@@ -97,10 +111,16 @@ export class VipScannerEngine extends EventEmitter {
           const isVerified = !!insp.isVerified;
           const count = insp.followersCount || 0;
           const text = insp.followersText || (count ? String(count) : null);
+          const gCount = insp.followingCount || 0;
+          const gText = insp.followingText || (gCount ? String(gCount) : null);
+          const ratio = insp.authorityRatio ?? (count ? Math.round((count / Math.max(1, gCount)) * 10) / 10 : null);
 
           this.profileMeta.set(u, {
             followersCount: count,
             followersText: text,
+            followingCount: gCount,
+            followingText: gText,
+            authorityRatio: ratio,
             isVerified,
             relationship: insp.state
           });
@@ -108,6 +128,7 @@ export class VipScannerEngine extends EventEmitter {
           if (isVerified) this.stats.verified++;
           if (count >= 10000) this.stats.above10k++;
           if (count >= 50000) this.stats.above50k++;
+          if ((ratio || 0) >= 10) this.stats.highAuthority++;
 
           let autoProtected = false;
           if (this.whitelist) {
@@ -123,6 +144,9 @@ export class VipScannerEngine extends EventEmitter {
             isVerified,
             followersCount: count,
             followersText: text,
+            followingCount: gCount,
+            followingText: gText,
+            authorityRatio: ratio,
             autoProtected
           });
         } catch (err) {

@@ -151,3 +151,98 @@ test('VipScannerEngine: uses dedicated inspectScanner and closes scanner tab on 
   assert.deepEqual(inspectedViaScanner, ['vip_creator'], 'should call dedicated inspectScanner');
   assert.equal(scannerTabClosed, true, 'should close scanner tab in finally block');
 });
+
+test('Authority Ratio: computes authorityRatio in classify and queries by minRatio in ProfileMetadataService', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-ratio-'));
+  const meta = new ProfileMetadataService(path.join(dir, 'meta.json'));
+
+  // Test classify ratio calculation
+  const classifiedCreator = classify({
+    url: 'https://www.instagram.com/creator/',
+    buttons: ['Following'],
+    bodyText: 'Digital creator',
+    isVerified: true,
+    followersCount: 50000,
+    followingCount: 500
+  });
+  assert.equal(classifiedCreator.authorityRatio, 100);
+  assert.equal(classifiedCreator.followingCount, 500);
+
+  // High authority account (> 10x ratio)
+  meta.set('high_authority_user', {
+    followersCount: 50000,
+    followingCount: 500,
+    authorityRatio: 100,
+    isVerified: false
+  });
+
+  // Balanced account (~2x ratio)
+  meta.set('balanced_user', {
+    followersCount: 2000,
+    followingCount: 1000,
+    authorityRatio: 2,
+    isVerified: false
+  });
+
+  // Reciprocal account (<1x ratio)
+  meta.set('reciprocal_user', {
+    followersCount: 300,
+    followingCount: 900,
+    authorityRatio: 0.33,
+    isVerified: false
+  });
+
+  const sum = meta.summary();
+  assert.equal(sum.highAuthorityCount, 1);
+
+  const highAuth = meta.query({ minRatio: 10 });
+  assert.equal(highAuth.length, 1);
+  assert.equal(highAuth[0].username, 'high_authority_user');
+
+  const balancedOrHigher = meta.query({ minRatio: 1, sort: 'ratio', dir: 'desc' });
+  assert.equal(balancedOrHigher.length, 2);
+  assert.equal(balancedOrHigher[0].username, 'high_authority_user');
+  assert.equal(balancedOrHigher[1].username, 'balanced_user');
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Headless Background Queue: enqueues new usernames into running VIP scanner on the fly', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-queue-'));
+  const meta = new ProfileMetadataService(path.join(dir, 'meta.json'));
+  const wl = new WhitelistService(path.join(dir, 'wl.json'));
+  const logger = new Logger(dir);
+
+  const scanned = [];
+  const fakeIg = {
+    async inspectScanner(username) {
+      scanned.push(username);
+      return { state: 'FOLLOWING', isVerified: false, followersCount: 100, followingCount: 50, authorityRatio: 2 };
+    },
+    async closeScannerTab() {}
+  };
+
+  const scanner = new VipScannerEngine({
+    ig: fakeIg,
+    profileMeta: meta,
+    whitelist: wl,
+    logger
+  });
+
+  // Test dynamic enqueuing
+  const res1 = scanner.enqueue(['user_a', 'user_b']);
+  assert.equal(res1.enqueuedCount, 2);
+  assert.equal(res1.queueRemaining, 2);
+
+  // Scan user_a and dynamically enqueue user_c during execution
+  const scanPromise = scanner.scan(['user_1'], { intervalSec: 0 });
+  scanner.enqueue(['user_2']);
+  await scanPromise;
+
+  assert.ok(scanned.includes('user_1'));
+  assert.ok(scanned.includes('user_2'));
+  assert.equal(scanner.snapshot().active, false);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+

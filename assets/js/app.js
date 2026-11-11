@@ -17,6 +17,7 @@ const ROUTES = [
   { id: 'blocked-profiles', label: 'Blocked Profiles', icon: 'ban', render: V.tableView({ id: 'bl', title: 'Blocked profiles', list: 'blocked', sub: 'From blocked_profiles.' }) },
   { id: 'whitelist', label: 'Protected Whitelist', icon: 'shield', count: () => store.data?.whitelist?.length || 0, render: V.whitelistView },
   { sep: 'Intelligence' },
+  { id: 'influencers', label: 'VIP & Influencer Finder', icon: 'sparkles', count: () => store.data?.influencersSummary?.verifiedCount || 0, render: V.vipInfluencerView },
   { id: 'intelligence', label: 'Followers Intelligence', icon: 'sparkles', render: V.intelligenceView },
   { id: 'analytics', label: 'Analytics', icon: 'activity', render: V.analyticsView },
   { sep: 'Automation' },

@@ -49,9 +49,9 @@ const COUNTER = { UNFOLLOWED: 'unfollowed', CANCELLED: 'unfollowed', FOLLOWED: '
  *  - one bad profile never ends the batch.
  */
 export class AutomationController extends EventEmitter {
-  constructor({ ig, checkpoint, logger, getSettings, job = 'unfollow', whitelist }) {
+  constructor({ ig, checkpoint, logger, getSettings, job = 'unfollow', whitelist, profileMeta }) {
     super();
-    Object.assign(this, { ig, checkpoint, logger, getSettings, whitelist });
+    Object.assign(this, { ig, checkpoint, logger, getSettings, whitelist, profileMeta });
     this.job = JOBS[job];
     this.status = E.IDLE; this.pauseReason = null; this.run = null;
     this.stats = this.#blank(); this.stopFlag = false; this.pauseFlag = false; this.resuming = false;
@@ -271,6 +271,16 @@ export class AutomationController extends EventEmitter {
   }
 
   async #decide(u, insp, s) {
+    if (this.profileMeta && (insp.followersCount !== null || insp.isVerified)) {
+      try {
+        this.profileMeta.set(u, {
+          followersCount: insp.followersCount,
+          followersText: insp.followersText,
+          isVerified: insp.isVerified,
+          relationship: insp.state
+        });
+      } catch {}
+    }
     if (this.whitelist?.has(u) && (this.job.name === 'unfollow' || this.job.name === 'cancel')) {
       this.#record(u, STATUS.SKIPPED, 'Whitelisted account; protected from action.');
       this.#log('INFO', u, STATUS.SKIPPED, `Whitelisted account (@${u}); protected from action and skipped.`);

@@ -8,8 +8,8 @@ const LISTS = ['nonFollowers', 'followers', 'following', 'mutual', 'fans', 'pend
 /** Holds the imported export (persisted, so a restart needs no re-import) and answers table queries. */
 export class AccountService {
   /** checkpoints = { unfollow, cancel }: the pending-requests list reads the cancel checkpoint, every other list the unfollow one. */
-  constructor(file, checkpoints, whitelist = null) {
-    this.file = file; this.cps = checkpoints; this.whitelist = whitelist; this.incoming = [];
+  constructor(file, checkpoints, whitelist = null, profileMeta = null) {
+    this.file = file; this.cps = checkpoints; this.whitelist = whitelist; this.profileMeta = profileMeta; this.incoming = [];
     this.model = readJson(file, null);
     this.#index();
   }
@@ -63,6 +63,7 @@ export class AccountService {
       const a = cp.get(u);
       const st = a?.status || STATUS.PENDING;
       const displayName = this.model?.displayNames?.[u] || null;
+      const meta = this.profileMeta?.get(u);
       return {
         username: u,
         displayName,
@@ -71,6 +72,9 @@ export class AccountService {
         requestStatus: requestStatus(st),
         status: st,
         whitelisted: this.whitelist ? this.whitelist.has(u) : false,
+        isVerified: meta?.isVerified ?? false,
+        followersCount: meta?.followersCount ?? null,
+        followersText: meta?.followersText ?? null,
         lastAttemptAt: a?.lastAttemptAt || null,
         reason: a?.reason || null,
         screenshot: a?.screenshot || null,
@@ -82,14 +86,22 @@ export class AccountService {
     }
     if (status === 'WHITELISTED') {
       rows = rows.filter(r => r.whitelisted);
+    } else if (status === 'VERIFIED') {
+      rows = rows.filter(r => r.isVerified);
+    } else if (status === 'ABOVE_10K') {
+      rows = rows.filter(r => (r.followersCount || 0) >= 10000);
+    } else if (status === 'ABOVE_50K') {
+      rows = rows.filter(r => (r.followersCount || 0) >= 50000);
     } else if (status) {
       rows = rows.filter(r => r.status === status);
     }
-    const validSorts = ['username', 'displayName', 'status', 'lastAttemptAt', 'relationship', 'requestedAt'];
+    const validSorts = ['username', 'displayName', 'status', 'lastAttemptAt', 'relationship', 'requestedAt', 'followersCount'];
     const k = validSorts.includes(sort) ? sort : (list === 'pending' ? 'requestedAt' : 'username');
     const mul = dir === 'desc' ? -1 : 1;
     if (k === 'requestedAt') {
       rows.sort((a, b) => mul * ((a.requestedAt || 0) - (b.requestedAt || 0)));
+    } else if (k === 'followersCount') {
+      rows.sort((a, b) => mul * ((a.followersCount || 0) - (b.followersCount || 0)));
     } else {
       rows.sort((a, b) => mul * String(a[k] ?? '').localeCompare(String(b[k] ?? '')));
     }

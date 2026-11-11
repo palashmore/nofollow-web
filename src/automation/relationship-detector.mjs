@@ -11,9 +11,24 @@ export const FOLLOW_RE = /^(Follow|Follow Back|Seguir|Folgen|Suivre|Seguir de vo
 export const FOLLOW_BTN = /^(Follow|Follow Back|Seguir|Folgen|Suivre|Seguir de volta)/i;
 const UNAVAILABLE_RE = /Sorry, this page isn'?t available|Page Not Found|isn'?t available|The link you followed may be broken/i;
 
+export function parseFollowerCount(text) {
+  if (!text || typeof text !== 'string') return null;
+  const clean = text.trim().toUpperCase().replace(/,/g, '');
+  const m = clean.match(/^([\d.]+)\s*([KM])?$/);
+  if (!m) {
+    const digits = parseInt(clean.replace(/[^\d]/g, ''), 10);
+    return Number.isFinite(digits) ? digits : null;
+  }
+  const num = parseFloat(m[1]);
+  if (isNaN(num)) return null;
+  if (m[2] === 'M') return Math.round(num * 1000000);
+  if (m[2] === 'K') return Math.round(num * 1000);
+  return Math.round(num);
+}
+
 /**
  * Pure classifier over a page snapshot, so it is testable without a browser.
- * snap = { url, buttons: string[], bodyText, dialogText, hasLoginForm, followsYou, isPrivate }
+ * snap = { url, buttons: string[], bodyText, dialogText, hasLoginForm, followsYou, isPrivate, isVerified, followersCount, followersText }
  * Order matters: login > safety > unavailable > relationship button. Never guesses from a failed selector.
  */
 export function classify(snap) {
@@ -22,7 +37,13 @@ export function classify(snap) {
   const requested = buttons.some(b => REQUESTED_RE.test(b));
   const follow = buttons.some(b => FOLLOW_RE.test(b));
   const hasRel = following || requested || follow;
-  const info = { followsYou: !!snap.followsYou, isPrivate: !!snap.isPrivate };
+  const info = {
+    followsYou: !!snap.followsYou,
+    isPrivate: !!snap.isPrivate,
+    isVerified: !!snap.isVerified,
+    followersCount: snap.followersCount ?? null,
+    followersText: snap.followersText || null
+  };
 
   if (snap.hasLoginForm || /\/accounts\/(login|emailsignup)/.test(snap.url || '')) return { state: REL.LOGIN_REQUIRED, ...info };
   // Dialog text always counts; page text only when no profile buttons are present (a bio may contain these words)
@@ -46,11 +67,46 @@ export function takeSnapshot(page) {
       buttons = [...new Set([...buttons, ...btnsOf(document)])];
     }
     const body = (document.body && document.body.innerText) || '';
+
+    // Verified badge (Blue Tick)
+    const isVerified = !!(
+      header?.querySelector('svg[aria-label*="Verified" i], [title*="Verified" i]') ||
+      document.querySelector('header svg[aria-label*="Verified" i], svg[aria-label*="Verified" i], [title*="Verified" i]')
+    );
+
+    // Follower count extraction
+    let followersText = '';
+    let followersCount = null;
+    const metaDesc = document.querySelector('meta[property="og:description"]')?.getAttribute('content') ||
+                     document.querySelector('meta[name="description"]')?.getAttribute('content') || '';
+    const m = metaDesc.match(/([\d.,]+[KMkm]?)\s+Followers/i);
+    if (m) {
+      followersText = m[1];
+    } else {
+      const followersLink = document.querySelector('a[href$="/followers/"], a[href*="/followers"]');
+      if (followersLink) {
+        followersText = followersLink.innerText.split('\n')[0].replace(/followers/i, '').trim();
+      }
+    }
+    if (followersText) {
+      const clean = followersText.trim().toUpperCase().replace(/,/g, '');
+      const numMatch = clean.match(/^([\d.]+)\s*([KM])?$/);
+      if (numMatch) {
+        const val = parseFloat(numMatch[1]);
+        if (!isNaN(val)) {
+          followersCount = numMatch[2] === 'M' ? Math.round(val * 1000000) : numMatch[2] === 'K' ? Math.round(val * 1000) : Math.round(val);
+        }
+      } else {
+        followersCount = parseInt(clean.replace(/[^\d]/g, ''), 10) || null;
+      }
+    }
+
     return {
       url: location.href, buttons, bodyText: body.slice(0, 6000),
       dialogText: [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].map(d => d.innerText).join('\n').slice(0, 3000),
       hasLoginForm: !!document.querySelector('input[name=password]'),
       followsYou: /Follows you/i.test(body), isPrivate: /This account is private/i.test(body),
+      isVerified, followersCount, followersText: followersText || (followersCount ? String(followersCount) : null)
     };
   });
 }

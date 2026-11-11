@@ -22,6 +22,8 @@ import { StoriesHighlightsService } from './services/stories-highlights-service.
 import { FollowersIntelligenceService } from './services/followers-intelligence-service.mjs';
 import { ProfileSyncService } from './services/profile-sync-service.mjs';
 import { WhitelistService } from './services/whitelist-service.mjs';
+import { ProfileMetadataService } from './services/profile-metadata-service.mjs';
+import { VipScannerEngine } from './automation/vip-scanner.mjs';
 
 const PORT = Number(process.env.PORT) || 4173;
 const MIME = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -30,12 +32,13 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
   ensureDir(dataDir);
   const logger = new Logger(logsDir);
   const whitelist = new WhitelistService(path.join(dataDir, 'whitelist.json'));
+  const profileMeta = new ProfileMetadataService(path.join(dataDir, 'profile-metadata.json'));
   const checkpoints = {
     unfollow: new CheckpointService(path.join(dataDir, 'execution-state.json')),
     cancel: new PendingRequestStateService(path.join(dataDir, 'pending-request-state.json')),
     follow: new CheckpointService(path.join(dataDir, 'follow-execution-state.json'))
   };
-  const accounts = new AccountService(path.join(dataDir, 'import.json'), checkpoints, whitelist);
+  const accounts = new AccountService(path.join(dataDir, 'import.json'), checkpoints, whitelist, profileMeta);
   const pairing = new PairingService(path.join(dataDir, 'pairing.json'));
   const settingsFile = path.join(dataDir, 'settings.json');
   const loaded = loadSettings(readJson(settingsFile, {}));
@@ -44,10 +47,11 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
   if (testSettings) settings = { ...settings, ...testSettings };   // tests only: allows values below the UI minimums
   const session = ig || new BrowserSessionManager({ logger, channel: settings.browserChannel, lockFile: path.join(dataDir, '.browser.lock') });
   const engines = {
-    unfollow: new AutomationController({ ig: session, checkpoint: checkpoints.unfollow, logger, getSettings: () => settings, job: 'unfollow', whitelist }),
+    unfollow: new AutomationController({ ig: session, checkpoint: checkpoints.unfollow, logger, getSettings: () => settings, job: 'unfollow', whitelist, profileMeta }),
     cancel: new PendingRequestCancellationEngine({ ig: session, checkpoint: checkpoints.cancel, logger, getSettings: () => settings, accountService: accounts, whitelist }),
-    follow: new AutomationController({ ig: session, checkpoint: checkpoints.follow, logger, getSettings: () => settings, job: 'follow', whitelist }),
+    follow: new AutomationController({ ig: session, checkpoint: checkpoints.follow, logger, getSettings: () => settings, job: 'follow', whitelist, profileMeta }),
   };
+  const vipScanner = new VipScannerEngine({ ig: session, profileMeta, whitelist, logger, getSettings: () => settings });
   const orchestrator = new CentralJobOrchestrator({
     queueFile: path.join(dataDir, 'central-queue-state.json'),
     auditFile: path.join(dataDir, 'audit-history.json'),
@@ -74,6 +78,8 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
   }
   orchestrator.on('queueUpdated', q => send('queue', q));
   logger.on('log', e => send('log', e));
+  vipScanner.on('state', s => send('vipScanner', s));
+  vipScanner.on('scanned', a => send('vipScanned', a));
 
   const shownEngine = () => activeEngine() || engines[lastJob];
   const state = async () => ({
@@ -86,7 +92,9 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     profile: profileSync.getProfile(),
     postArchive: postArchive.summary(),
     storiesHighlights: storiesHighlights.summary(),
-    whitelist: whitelist.list()
+    whitelist: whitelist.list(),
+    vipScanner: vipScanner.snapshot(),
+    influencersSummary: profileMeta.summary()
   });
 
   const json = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
@@ -242,6 +250,48 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
       }
       case 'POST /api/whitelist/clear': {
         return json(res, 200, whitelist.clear());
+      }
+      case 'GET /api/influencers': {
+        return json(res, 200, {
+          summary: profileMeta.summary(),
+          profiles: profileMeta.query({
+            q: q.q || '',
+            verified: q.verified === '1',
+            minFollowers: +q.minFollowers || 0,
+            sort: q.sort || 'followers',
+            dir: q.dir || 'desc'
+          })
+        });
+      }
+      case 'POST /api/scan/vip/start': {
+        const b = JSON.parse(await body(req));
+        let list = b.usernames;
+        if (!list || !list.length) {
+          const listKind = b.list || 'following';
+          list = accounts.list(listKind);
+        }
+        const limit = +b.limit || 0;
+        if (limit > 0) list = list.slice(0, limit);
+        vipScanner.scan(list, {
+          intervalSec: +b.intervalSec || 5,
+          autoWhitelistVerified: !!b.autoWhitelistVerified,
+          autoWhitelistMin: +b.autoWhitelistMin || 0
+        }).catch(e => logger.error(`VIP Scanner error: ${e.message}`));
+        return json(res, 200, { ok: true, total: list.length });
+      }
+      case 'POST /api/scan/vip/stop': {
+        vipScanner.stop();
+        return json(res, 200, { ok: true });
+      }
+      case 'POST /api/whitelist/bulk-by-criteria': {
+        const b = JSON.parse(await body(req));
+        const minFollowers = +b.minFollowers || 0;
+        const verifiedOnly = !!b.verified;
+        const matches = profileMeta.query({ verified: verifiedOnly, minFollowers });
+        const usernames = matches.map(m => m.username);
+        if (!usernames.length) return json(res, 400, { error: 'No scanned profiles matched the criteria.' });
+        const resWl = whitelist.addMany(usernames);
+        return json(res, 200, { ok: true, added: resWl.addedCount, total: resWl.total });
       }
       case 'GET /api/export/csv': {
         const targetJob = q.job;

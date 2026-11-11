@@ -258,7 +258,11 @@ export const tableView = cfg => el => {
     ${lists.length > 1 ? `<div class="row" style="margin-bottom:12px">${lists.map(l => `<button class="btn sm ${l[0] === st.list ? 'primary' : ''}" data-list="${l[0]}">${esc(l[1])}</button>`).join('')}</div>` : ''}
     <div class="toolbar">
       <input type="search" id="q" placeholder="${requests ? 'Search username or display name' : 'Search username'}" value="${esc(st.q)}" aria-label="Search">
-      <select id="st" aria-label="Filter by status"><option value="">All statuses</option>${statuses.map(s => `<option value="${s}" ${st.status === s ? 'selected' : ''}>${label(s)}</option>`).join('')}</select>
+      <select id="st" aria-label="Filter by status">
+        <option value="">All statuses</option>
+        <option value="WHITELISTED" ${st.status === 'WHITELISTED' ? 'selected' : ''}>⭐ Protected (Whitelisted)</option>
+        ${statuses.map(s => `<option value="${s}" ${st.status === s ? 'selected' : ''}>${label(s)}</option>`).join('')}
+      </select>
       ${requests ? `<select id="sort-sel" aria-label="Sort order">
         <option value="oldest" ${st.sort === 'requestedAt' && st.dir === 'asc' ? 'selected' : ''}>Oldest First (Default)</option>
         <option value="newest" ${st.sort === 'requestedAt' && st.dir === 'desc' ? 'selected' : ''}>Newest First</option>
@@ -268,7 +272,10 @@ export const tableView = cfg => el => {
       <select id="sz" aria-label="Page size">${[25, 50, 100, 200].map(n => `<option ${st.size === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
       ${selectable ? `<span class="chip" id="selc"></span>
         <button class="btn sm" data-s="page">Select page</button><button class="btn sm" data-s="filtered">Select all filtered</button>
-        <button class="btn sm" data-s="pending">${requests ? 'Select all pending' : 'Select pending only'}</button><button class="btn sm ghost" data-s="clear">Clear</button>` : ''}
+        <button class="btn sm" data-s="pending">${requests ? 'Select all pending' : 'Select pending only'}</button>
+        <button class="btn sm primary" data-s="whitelist" title="Add all selected accounts to Protected Whitelist">${icon('shield', 13)} Whitelist selected</button>
+        <button class="btn sm ghost" data-s="unwhitelist" title="Remove selected accounts from Protected Whitelist">Un-whitelist</button>
+        <button class="btn sm ghost" data-s="clear">Clear</button>` : ''}
     </div>
     <div class="tablewrap"><table><thead><tr>${selectable ? '<th style="width:36px"><input type="checkbox" id="all" aria-label="Select page"></th>' : ''}
       ${requests ? `
@@ -330,31 +337,36 @@ export const tableView = cfg => el => {
     if (!rows.length) {
       tb.innerHTML = `<tr><td colspan="${cols}"><div class="empty"><h2>${empty ? 'No data imported yet' : 'No accounts match'}</h2>${empty ? '<a class="btn primary" href="#/import-data">Import data</a>' : 'Try a different search or filter.'}</div></td></tr>`;
     } else {
-      tb.innerHTML = rows.map(r => `<tr>
+      const wlList = store.data?.whitelist || [];
+      tb.innerHTML = rows.map(r => {
+        const isWl = r.whitelisted || wlList.includes(r.username.toLowerCase());
+        const starBtn = `<button class="star-btn ${isWl ? 'active' : ''}" data-star="${esc(r.username)}" title="${isWl ? 'Protected in Whitelist - Click to unprotect' : 'Click to star / protect in Whitelist'}" aria-label="Star / Whitelist">${icon('star', 15)}</button>`;
+        return `<tr>
         ${selectable ? `<td><input type="checkbox" data-u="${esc(r.username)}" ${sel.has(r.username) ? 'checked' : ''} aria-label="Select ${esc(r.username)}"></td>` : ''}
         ${requests ? `
-          <td><a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a></td>
+          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:4px">⭐ Protected</span>` : ''}</td>
           <td>${esc(r.displayName || '—')}</td>
           <td class="muted">${fmtDate(r.requestedAt)}</td>
           <td><span class="chip" title="${esc(r.requestedAt ? new Date(r.requestedAt).toLocaleString() : '')}">${formatAge(r.requestedAt)}</span></td>
           <td>${esc(r.relationship || 'Request pending')}</td>
           <td>${badge(r.status)} <span class="muted">${esc(r.requestStatus)}</span></td>
           <td class="muted">${fmtDate(r.lastAttemptAt)}</td>
-          <td>${outgoing ? `<button class="btn sm" data-c="${esc(r.username)}" ${['CANCELLED', 'ALREADY_CANCELLED', 'ACCEPTED', 'PROFILE_UNAVAILABLE'].includes(r.status) ? 'disabled' : ''}>Cancel request</button>` : ''}
+          <td>${outgoing ? `<button class="btn sm" data-c="${esc(r.username)}" ${['CANCELLED', 'ALREADY_CANCELLED', 'ACCEPTED', 'PROFILE_UNAVAILABLE'].includes(r.status) || isWl ? 'disabled' : ''} title="${isWl ? 'Protected: cannot cancel' : ''}">Cancel request</button>` : ''}
               <a class="btn sm ghost" href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">Open</a>
               ${r.reason || r.screenshot ? `<button class="btn sm ghost" data-i="${esc(r.username)}">Inspect</button>` : ''}</td>
         ` : `
-          <td><a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a></td>
+          <td>${starBtn} <a href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">@${esc(r.username)}</a>${isWl ? ` <span class="chip ok" style="padding:1px 5px;font-size:10px;margin-left:4px">⭐ Protected</span>` : ''}</td>
           <td>${esc(r.relationship)}</td><td class="muted">${esc(r.accountStatus)}</td><td>${badge(r.status)}</td>
           <td class="muted">${fmtDate(r.lastAttemptAt)}</td>
           <td>
-            ${['Mutual', 'Not following back', 'Following'].includes(r.relationship) ? `<button class="btn sm danger-ghost" data-unfollow="${esc(r.username)}" ${['UNFOLLOWED', 'ALREADY_UNFOLLOWED'].includes(r.status) ? 'disabled' : ''}>Unfollow</button>` : ''}
+            ${['Mutual', 'Not following back', 'Following'].includes(r.relationship) ? `<button class="btn sm danger-ghost" data-unfollow="${esc(r.username)}" ${['UNFOLLOWED', 'ALREADY_UNFOLLOWED'].includes(r.status) || isWl ? 'disabled' : ''} title="${isWl ? 'Protected: cannot unfollow' : ''}">Unfollow</button>` : ''}
             ${r.relationship === 'Follows you only' ? `<button class="btn sm primary-ghost" data-follow="${esc(r.username)}">Follow</button>` : ''}
             <a class="btn sm ghost" href="${profile(r.username)}" target="_blank" rel="noopener noreferrer">Open</a>
             ${r.reason || r.screenshot ? `<button class="btn sm ghost" data-i="${esc(r.username)}">Inspect</button>` : ''}
           </td>
         `}
-      </tr>`).join('');
+      </tr>`;
+      }).join('');
     }
     const pages = Math.max(1, Math.ceil(total / st.size));
     $('#pg', el).innerHTML = `<span>${fmtNum(total)} accounts${total ? ` · ${(st.page - 1) * st.size + 1}–${Math.min(total, st.page * st.size)}` : ''}</span>
@@ -378,6 +390,24 @@ export const tableView = cfg => el => {
     });
   }
   el.addEventListener('click', async ev => {
+    const starBtn = ev.target.closest('[data-star]');
+    if (starBtn) {
+      const u = starBtn.dataset.star;
+      try {
+        await post('/api/whitelist/toggle', { username: u });
+        const list = await api('/api/whitelist');
+        if (store.data) store.data.whitelist = list;
+        const nowProtected = list.includes(u.toLowerCase());
+        toast(nowProtected ? `⭐ @${u} added to Protected Whitelist` : `Removed @${u} from Whitelist`, 'ok');
+        const row = rows.find(x => x.username.toLowerCase() === u.toLowerCase());
+        if (row) row.whitelisted = nowProtected;
+        draw();
+        await hooks.refresh();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+      return;
+    }
     const t = ev.target;
     if (t.dataset.list) { st.list = t.dataset.list; st.page = 1; st.status = ''; hooks.route(); return; }
     if (t.dataset.sort) { st.dir = st.sort === t.dataset.sort && st.dir === 'asc' ? 'desc' : 'asc'; st.sort = t.dataset.sort; load(); return; }
@@ -423,6 +453,38 @@ export const tableView = cfg => el => {
       const r = await api(`/api/accounts?${qs({ ids: 1, status: s === 'pending' ? 'PENDING' : st.status })}`);
       r.ids.forEach(u => sel.add(u));
       toast(`${fmtNum(r.ids.length)} ${requests ? 'requests' : 'accounts'} added to the selection`);
+    }
+    if (s === 'whitelist') {
+      if (!sel.size) { toast('Please select at least one account first.', 'warn'); return; }
+      const list = Array.from(sel);
+      try {
+        const res = await post('/api/whitelist/add', { usernames: list });
+        const updated = await api('/api/whitelist');
+        if (store.data) store.data.whitelist = updated;
+        toast(`⭐ Added ${fmtNum(res.addedCount || list.length)} accounts to Protected Whitelist`, 'ok');
+        rows.forEach(r => { if (sel.has(r.username)) r.whitelisted = true; });
+        draw();
+        await hooks.refresh();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+      return;
+    }
+    if (s === 'unwhitelist') {
+      if (!sel.size) { toast('Please select at least one account first.', 'warn'); return; }
+      const list = Array.from(sel);
+      try {
+        await post('/api/whitelist/remove', { usernames: list });
+        const updated = await api('/api/whitelist');
+        if (store.data) store.data.whitelist = updated;
+        toast(`Removed ${fmtNum(list.length)} accounts from Protected Whitelist`, 'ok');
+        rows.forEach(r => { if (sel.has(r.username)) r.whitelisted = false; });
+        draw();
+        await hooks.refresh();
+      } catch (e) {
+        toast(e.message, 'err');
+      }
+      return;
     }
     draw();
   });

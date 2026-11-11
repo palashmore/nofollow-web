@@ -64,6 +64,25 @@ export class WhitelistService {
     return this.has(username) ? this.remove(username) : this.add(username);
   }
 
+  removeMany(usernames) {
+    let removedCount = 0;
+    for (const raw of usernames) {
+      const u = normalizeUsername(raw);
+      if (u) {
+        const idx = this.state.accounts.indexOf(u);
+        if (idx !== -1) {
+          this.state.accounts.splice(idx, 1);
+          removedCount++;
+        }
+      }
+    }
+    if (removedCount > 0) {
+      this.state.updatedAt = new Date().toISOString();
+      this.save();
+    }
+    return { ok: true, removedCount, total: this.state.accounts.length };
+  }
+
   addMany(usernames) {
     let addedCount = 0;
     for (const raw of usernames) {

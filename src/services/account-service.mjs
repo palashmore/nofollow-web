@@ -8,8 +8,8 @@ const LISTS = ['nonFollowers', 'followers', 'following', 'mutual', 'fans', 'pend
 /** Holds the imported export (persisted, so a restart needs no re-import) and answers table queries. */
 export class AccountService {
   /** checkpoints = { unfollow, cancel }: the pending-requests list reads the cancel checkpoint, every other list the unfollow one. */
-  constructor(file, checkpoints) {
-    this.file = file; this.cps = checkpoints; this.incoming = [];
+  constructor(file, checkpoints, whitelist = null) {
+    this.file = file; this.cps = checkpoints; this.whitelist = whitelist; this.incoming = [];
     this.model = readJson(file, null);
     this.#index();
   }
@@ -70,6 +70,7 @@ export class AccountService {
         accountStatus: st === STATUS.PROFILE_UNAVAILABLE ? 'Unavailable' : a ? 'Available' : '—',
         requestStatus: requestStatus(st),
         status: st,
+        whitelisted: this.whitelist ? this.whitelist.has(u) : false,
         lastAttemptAt: a?.lastAttemptAt || null,
         reason: a?.reason || null,
         screenshot: a?.screenshot || null,
@@ -79,7 +80,11 @@ export class AccountService {
     if (needle) {
       rows = rows.filter(r => r.username.includes(needle) || (r.displayName && r.displayName.toLowerCase().includes(needle)));
     }
-    if (status) rows = rows.filter(r => r.status === status);
+    if (status === 'WHITELISTED') {
+      rows = rows.filter(r => r.whitelisted);
+    } else if (status) {
+      rows = rows.filter(r => r.status === status);
+    }
     const validSorts = ['username', 'displayName', 'status', 'lastAttemptAt', 'relationship', 'requestedAt'];
     const k = validSorts.includes(sort) ? sort : (list === 'pending' ? 'requestedAt' : 'username');
     const mul = dir === 'desc' ? -1 : 1;

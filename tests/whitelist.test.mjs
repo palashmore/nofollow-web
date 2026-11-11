@@ -38,10 +38,14 @@ test('WhitelistService: basic add, remove, has, toggle, addMany, clear', () => {
   wl.addMany(['@bob', 'charlie', 'alice', '  ']);
   assert.deepEqual(wl.list().sort(), ['alice', 'bob', 'charlie']);
 
-  // Remove
-  wl.remove('bob');
+  // removeMany
+  wl.removeMany(['bob', 'alice']);
   assert.equal(wl.has('bob'), false);
-  assert.equal(wl.has('alice'), true);
+  assert.equal(wl.has('alice'), false);
+  assert.deepEqual(wl.list(), ['charlie']);
+
+  // Add back for reload test
+  wl.add('alice');
 
   // Persistence reload
   const wl2 = new WhitelistService(file);
@@ -55,6 +59,38 @@ test('WhitelistService: basic add, remove, has, toggle, addMany, clear', () => {
   // Verify file on disk after clear
   const wl3 = new WhitelistService(file);
   assert.deepEqual(wl3.list(), []);
+});
+
+test('AccountService: whitelisted flag and status=WHITELISTED filtering', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-acc-wl-'));
+  const wl = new WhitelistService(path.join(dir, 'wl.json'));
+  wl.add('vip_friend');
+
+  const importFile = path.join(dir, 'import.json');
+  fs.writeFileSync(importFile, JSON.stringify({
+    lists: {
+      followers: ['vip_friend', 'other_user'],
+      following: ['vip_friend', 'stranger'],
+      pending: []
+    }
+  }));
+
+  const checkpoints = {
+    unfollow: new CheckpointService(path.join(dir, 'unf.json')),
+    cancel: new PendingRequestStateService(path.join(dir, 'can.json'))
+  };
+
+  const { AccountService } = await import('../src/services/account-service.mjs');
+  const accounts = new AccountService(importFile, checkpoints, wl);
+  const qAll = accounts.query({ list: 'following' });
+  const vip = qAll.rows.find(r => r.username === 'vip_friend');
+  const stranger = qAll.rows.find(r => r.username === 'stranger');
+  assert.equal(vip.whitelisted, true);
+  assert.equal(stranger.whitelisted, false);
+
+  const qFiltered = accounts.query({ list: 'following', status: 'WHITELISTED' });
+  assert.equal(qFiltered.rows.length, 1);
+  assert.equal(qFiltered.rows[0].username, 'vip_friend');
 });
 
 test('AutomationController: whitelisted accounts are excluded from eligible() and skipped in unfollow', async () => {

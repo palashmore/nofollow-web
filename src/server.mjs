@@ -35,7 +35,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     cancel: new PendingRequestStateService(path.join(dataDir, 'pending-request-state.json')),
     follow: new CheckpointService(path.join(dataDir, 'follow-execution-state.json'))
   };
-  const accounts = new AccountService(path.join(dataDir, 'import.json'), checkpoints);
+  const accounts = new AccountService(path.join(dataDir, 'import.json'), checkpoints, whitelist);
   const pairing = new PairingService(path.join(dataDir, 'pairing.json'));
   const settingsFile = path.join(dataDir, 'settings.json');
   const loaded = loadSettings(readJson(settingsFile, {}));
@@ -230,8 +230,11 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         return json(res, 200, whitelist.add(b.username));
       }
       case 'POST /api/whitelist/remove': {
-        const u = JSON.parse(await body(req)).username;
-        return json(res, 200, whitelist.remove(u));
+        const b = JSON.parse(await body(req));
+        if (Array.isArray(b.usernames)) {
+          return json(res, 200, whitelist.removeMany(b.usernames));
+        }
+        return json(res, 200, whitelist.remove(b.username));
       }
       case 'POST /api/whitelist/toggle': {
         const u = JSON.parse(await body(req)).username;

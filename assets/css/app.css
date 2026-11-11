@@ -677,6 +677,34 @@ h2 {
   border-color: var(--accent);
 }
 
+/* Star Button / Whitelist Quick Shield */
+.star-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 3px 4px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  vertical-align: middle;
+  line-height: 1;
+  transition: all var(--transition-fast);
+}
+.star-btn:hover {
+  color: #f59e0b;
+  transform: scale(1.2);
+}
+.star-btn.active {
+  color: #f59e0b;
+}
+.star-btn.active svg {
+  fill: #f59e0b;
+  stroke: #d97706;
+}
+
+
 /* Post Archive & Engagement Visuals */
 .post-thumb {
   width: 44px;

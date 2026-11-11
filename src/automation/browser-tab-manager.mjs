@@ -10,10 +10,10 @@ export class BrowserTabManager {
   #seq = 0;
   #byPage = new WeakMap();
 
-  constructor(logger) { this.logger = logger; this.ctx = null; this.tabs = new Map(); this.actionId = null; }
+  constructor(logger) { this.logger = logger; this.ctx = null; this.tabs = new Map(); this.actionId = null; this.scannerId = null; }
 
   attach(ctx) {
-    this.ctx = ctx; this.tabs.clear(); this.actionId = null;
+    this.ctx = ctx; this.tabs.clear(); this.actionId = null; this.scannerId = null;
     for (const p of ctx.pages()) this.#track(p);
     ctx.on('page', p => this.#track(p));
   }
@@ -25,6 +25,7 @@ export class BrowserTabManager {
     page.on('close', () => {
       this.tabs.delete(rec.id);
       if (this.actionId === rec.id) { this.actionId = null; this.logger?.warn('The automation tab was closed; a new one is opened when needed.'); }
+      if (this.scannerId === rec.id) { this.scannerId = null; this.logger?.info('The scanner tab was closed.'); }
     });
     return rec;
   }
@@ -40,6 +41,25 @@ export class BrowserTabManager {
     const rec = this.#track(page, 'action'); rec.role = 'action'; this.actionId = rec.id;
     page.on('popup', p => p.close().catch(() => {}));   // unexpected popups opened by the action tab only
     return page;
+  }
+
+  /** The VIP scanner's dedicated tab. Runs concurrently without interfering with the action tab. */
+  async scanner() {
+    const cur = this.tabs.get(this.scannerId);
+    if (cur && !cur.page.isClosed()) return cur.page;
+    const page = await this.ctx.newPage();
+    const rec = this.#track(page, 'scanner'); rec.role = 'scanner'; this.scannerId = rec.id;
+    page.on('popup', p => p.close().catch(() => {}));
+    return page;
+  }
+
+  /** Safely closes the scanner tab when scanning completes or stops. */
+  async closeScanner() {
+    const cur = this.tabs.get(this.scannerId);
+    if (cur && !cur.page.isClosed()) {
+      await cur.page.close().catch(() => {});
+    }
+    this.scannerId = null;
   }
 
   list() {

@@ -84,7 +84,16 @@ export class VipScannerEngine extends EventEmitter {
         this.emit('state', this.snapshot());
 
         try {
-          const insp = await this.ig.inspect(u, { navTimeout: 30000, elementTimeout: 8000 });
+          const insp = typeof this.ig.inspectScanner === 'function'
+            ? await this.ig.inspectScanner(u, { navTimeout: 30000, elementTimeout: 8000 })
+            : await this.ig.inspect(u, { navTimeout: 30000, elementTimeout: 8000 });
+
+          if (insp.state === 'ACTION_BLOCKED' || insp.state === 'CAPTCHA') {
+            this.logger.warn(`VIP Scanner paused for safety: Instagram indicated ${insp.state}.`);
+            this.pause();
+            break;
+          }
+
           const isVerified = !!insp.isVerified;
           const count = insp.followersCount || 0;
           const text = insp.followersText || (count ? String(count) : null);
@@ -130,6 +139,9 @@ export class VipScannerEngine extends EventEmitter {
     } finally {
       this.active = false;
       this.stats.current = null;
+      if (typeof this.ig.closeScannerTab === 'function') {
+        await this.ig.closeScannerTab().catch(() => {});
+      }
       this.emit('state', this.snapshot());
     }
 

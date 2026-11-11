@@ -129,6 +129,25 @@ export class BrowserSessionManager {
     return out;
   }
 
+  /** Dedicated profile inspection for VIP & Influencer scanner running in its own tab. */
+  async inspectScanner(username, opts = {}) {
+    await this.ensureBrowser();
+    const page = await this.tabs.scanner();
+    const stateTimeout = opts.elementTimeout ?? this.stateTimeout;
+    const r = await openProfile(page, username, { timeout: opts.navTimeout ?? 30000, stateTimeout });
+    let out = r;
+    if (r.state === REL.AMBIGUOUS) {
+      await page.reload({ waitUntil: 'domcontentloaded', timeout: opts.navTimeout ?? 30000 });
+      out = await waitForState(page, { timeout: stateTimeout });
+    }
+    if (out.state === REL.LOGIN_REQUIRED) this.#setSession(SESSION.LOGIN_REQUIRED, { reason: 'Instagram asked for login while inspecting profile in scanner.' });
+    return out;
+  }
+
+  async closeScannerTab() {
+    await this.tabs.closeScanner();
+  }
+
   async unfollow(opts = {}) { await this.ensureBrowser(); return unfollow(await this.tabs.action(), opts); }
   async cancelRequest(opts = {}) { await this.ensureBrowser(); return cancelRequest(await this.tabs.action(), opts); }
   async follow(opts = {}) { await this.ensureBrowser(); return follow(await this.tabs.action(), opts); }

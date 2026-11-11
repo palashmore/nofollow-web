@@ -114,3 +114,35 @@ test('VipScannerEngine: scans queue and auto-whitelists verified and >10K accoun
   assert.equal(meta.get('star_athlete').isVerified, true);
   assert.equal(meta.get('popular_artist').followersCount, 15000);
 });
+
+test('VipScannerEngine: uses dedicated inspectScanner and closes scanner tab on finish', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-vip-scanner-'));
+  const meta = new ProfileMetadataService(path.join(dir, 'meta.json'));
+  const wl = new WhitelistService(path.join(dir, 'wl.json'));
+  const logger = new Logger(dir);
+
+  let scannerTabClosed = false;
+  const inspectedViaScanner = [];
+
+  const fakeIg = {
+    async inspectScanner(username) {
+      inspectedViaScanner.push(username);
+      return { state: 'FOLLOWING', isVerified: true, followersCount: 20000, followersText: '20K' };
+    },
+    async closeScannerTab() {
+      scannerTabClosed = true;
+    }
+  };
+
+  const scanner = new VipScannerEngine({
+    ig: fakeIg,
+    profileMeta: meta,
+    whitelist: wl,
+    logger
+  });
+
+  await scanner.scan(['vip_creator'], { intervalSec: 0 });
+
+  assert.deepEqual(inspectedViaScanner, ['vip_creator'], 'should call dedicated inspectScanner');
+  assert.equal(scannerTabClosed, true, 'should close scanner tab in finally block');
+});

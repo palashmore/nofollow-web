@@ -39,6 +39,12 @@ export class ProfileMetadataService {
     return !!(u && this.state.profiles[u]);
   }
 
+  hasScannedStats(username) {
+    const u = normalizeUsername(username);
+    const p = u ? this.state.profiles[u] : null;
+    return !!(p && p.followersCount !== null && p.followersCount !== undefined);
+  }
+
   set(username, { followersCount = null, followersText = null, followingCount = null, followingText = null, authorityRatio = null, isVerified = false, fullName = null, profilePicUrl = null, relationship = null } = {}) {
     const u = normalizeUsername(username);
     if (!u) return;
@@ -48,10 +54,13 @@ export class ProfileMetadataService {
     const fName = fullName !== null ? fullName : (prev.fullName ?? null);
     const pic = profilePicUrl !== null ? profilePicUrl : (prev.profilePicUrl ?? null);
     let ratio = authorityRatio !== null ? authorityRatio : (prev.authorityRatio ?? null);
-    if (ratio === null && fCount !== null) {
-      const denom = (gCount && gCount > 0) ? gCount : 1;
-      ratio = Math.round((fCount / denom) * 10) / 10;
+    if (ratio === null && fCount !== null && gCount !== null && gCount > 0) {
+      ratio = Math.round((fCount / gCount) * 10) / 10;
     }
+    const cleanRel = (relationship && relationship !== 'LOADING' && relationship !== 'AMBIGUOUS')
+      ? (relationship === 'FOLLOWING' ? 'Following' : relationship === 'NOT_FOLLOWING' ? 'Not following' : relationship === 'REQUESTED' ? 'Request pending' : relationship)
+      : (prev.relationship && prev.relationship !== 'LOADING' && prev.relationship !== 'AMBIGUOUS' ? prev.relationship : null);
+
     this.state.profiles[u] = {
       username: u,
       fullName: fName,
@@ -62,7 +71,7 @@ export class ProfileMetadataService {
       followingText: followingText || prev.followingText || (gCount ? String(gCount) : null),
       authorityRatio: ratio,
       isVerified: typeof isVerified === 'boolean' ? isVerified : (prev.isVerified ?? false),
-      relationship: relationship || prev.relationship || null,
+      relationship: cleanRel,
       scannedAt: new Date().toISOString()
     };
     this.state.updatedAt = new Date().toISOString();
@@ -108,7 +117,9 @@ export class ProfileMetadataService {
     let above10k = 0;
     let above50k = 0;
     let highAuthorityCount = 0;
+    let statsScannedCount = 0;
     for (const p of all) {
+      if (p.followersCount !== null && p.followersCount !== undefined) statsScannedCount++;
       if (p.isVerified) verifiedCount++;
       const c = p.followersCount || 0;
       if (c >= 10000) above10k++;
@@ -117,6 +128,7 @@ export class ProfileMetadataService {
     }
     return {
       totalScanned: all.length,
+      statsScannedCount,
       verifiedCount,
       above10k,
       above50k,

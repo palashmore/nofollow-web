@@ -9,13 +9,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
  * and follower counts (e.g. 10k+, 50k+), and optionally auto-whitelists them.
  */
 export class VipScannerEngine extends EventEmitter {
-  constructor({ ig, profileMeta, whitelist, logger, getSettings }) {
+  constructor({ ig, profileMeta, whitelist, logger, getSettings, accountService }) {
     super();
     this.ig = ig;
     this.profileMeta = profileMeta;
     this.whitelist = whitelist;
     this.logger = logger;
     this.getSettings = getSettings || (() => ({}));
+    this.accounts = accountService || null;
 
     this.active = false;
     this.stopFlag = false;
@@ -113,7 +114,20 @@ export class VipScannerEngine extends EventEmitter {
           const text = insp.followersText || (count ? String(count) : null);
           const gCount = insp.followingCount || 0;
           const gText = insp.followingText || (gCount ? String(gCount) : null);
-          const ratio = insp.authorityRatio ?? (count ? Math.round((count / Math.max(1, gCount)) * 10) / 10 : null);
+          const ratio = insp.authorityRatio ?? (count && gCount ? Math.round((count / gCount) * 10) / 10 : null);
+
+          let rel = null;
+          if (insp.state && insp.state !== 'LOADING' && insp.state !== 'AMBIGUOUS') {
+            if (insp.state === 'FOLLOWING') rel = 'Following';
+            else if (insp.state === 'NOT_FOLLOWING') rel = 'Not following';
+            else if (insp.state === 'REQUESTED') rel = 'Request pending';
+            else rel = insp.state;
+          }
+          if (!rel && this.accounts) {
+            const accRel = this.accounts.relationship(u);
+            if (accRel && accRel !== 'Other') rel = accRel;
+          }
+          if (!rel) rel = 'Following';
 
           this.profileMeta.set(u, {
             followersCount: count,
@@ -122,7 +136,7 @@ export class VipScannerEngine extends EventEmitter {
             followingText: gText,
             authorityRatio: ratio,
             isVerified,
-            relationship: insp.state
+            relationship: rel
           });
 
           if (isVerified) this.stats.verified++;

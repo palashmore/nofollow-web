@@ -52,7 +52,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
     cancel: new PendingRequestCancellationEngine({ ig: session, checkpoint: checkpoints.cancel, logger, getSettings: () => settings, accountService: accounts, whitelist }),
     follow: new AutomationController({ ig: session, checkpoint: checkpoints.follow, logger, getSettings: () => settings, job: 'follow', whitelist, profileMeta }),
   };
-  const vipScanner = new VipScannerEngine({ ig: session, profileMeta, whitelist, logger, getSettings: () => settings });
+  const vipScanner = new VipScannerEngine({ ig: session, profileMeta, whitelist, logger, getSettings: () => settings, accountService: accounts });
   const liveSync = new LiveRelationshipSyncEngine({ ig: session, accountService: accounts, profileMeta, logger });
   const orchestrator = new CentralJobOrchestrator({
     queueFile: path.join(dataDir, 'central-queue-state.json'),
@@ -259,16 +259,34 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         return json(res, 200, whitelist.clear());
       }
       case 'GET /api/influencers': {
+        const queryResult = profileMeta.query({
+          q: q.q || '',
+          verified: q.verified === '1',
+          minFollowers: +q.minFollowers || 0,
+          minRatio: +q.minRatio || 0,
+          sort: q.sort || 'followers',
+          dir: q.dir || 'desc'
+        });
+        const profiles = queryResult.map(p => {
+          let rel = accounts ? accounts.relationship(p.username) : '';
+          if (!rel || rel === 'Other') {
+            if (p.relationship && p.relationship !== 'LOADING' && p.relationship !== 'AMBIGUOUS') {
+              if (p.relationship === 'FOLLOWING') rel = 'Following';
+              else if (p.relationship === 'NOT_FOLLOWING') rel = 'Not following';
+              else if (p.relationship === 'REQUESTED') rel = 'Request pending';
+              else rel = p.relationship;
+            } else {
+              rel = 'Following';
+            }
+          }
+          return {
+            ...p,
+            relationship: rel
+          };
+        });
         return json(res, 200, {
           summary: profileMeta.summary(),
-          profiles: profileMeta.query({
-            q: q.q || '',
-            verified: q.verified === '1',
-            minFollowers: +q.minFollowers || 0,
-            minRatio: +q.minRatio || 0,
-            sort: q.sort || 'followers',
-            dir: q.dir || 'desc'
-          })
+          profiles
         });
       }
       case 'POST /api/scan/vip/start': {
@@ -281,7 +299,7 @@ export function createApp({ dataDir = PATHS.data, logsDir = PATHS.logs, ig, test
         const totalInList = list.length;
         const rescanAll = !!b.rescanAll;
         if (!rescanAll) {
-          list = list.filter(u => !profileMeta.has(u));
+          list = list.filter(u => !profileMeta.hasScannedStats(u));
           const skipped = totalInList - list.length;
           if (skipped > 0) logger.info(`VIP Scanner: skipping ${skipped} already-scanned profiles. ${list.length} unscanned remaining.`);
         }

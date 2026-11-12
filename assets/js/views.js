@@ -1859,6 +1859,20 @@ export function vipInfluencerView(el) {
         }
       }
 
+      let relBadge = '<span class="chip">Following</span>';
+      const rel = p.relationship;
+      if (rel === 'Mutual') {
+        relBadge = '<span class="chip ok" style="padding:1px 6px;font-size:11px">🤝 Mutual</span>';
+      } else if (rel === 'Not following back' || rel === 'NOT_FOLLOWING' || rel === 'Not following') {
+        relBadge = '<span class="chip" style="color:#f59e0b;border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.08);padding:1px 6px;font-size:11px">⚠️ Not following back</span>';
+      } else if (rel === 'Follows you only') {
+        relBadge = '<span class="chip" style="color:#0284c7;border-color:rgba(2,132,199,0.3);background:rgba(2,132,199,0.08);padding:1px 6px;font-size:11px">👤 Follows you only</span>';
+      } else if (rel === 'Request pending' || rel === 'Requested' || rel === 'REQUESTED') {
+        relBadge = '<span class="chip muted" style="padding:1px 6px;font-size:11px">⏳ Request pending</span>';
+      } else if (rel && rel !== 'LOADING' && rel !== 'AMBIGUOUS') {
+        relBadge = `<span class="chip" style="padding:1px 6px;font-size:11px">${esc(rel)}</span>`;
+      }
+
       return `
         <tr>
           <td class="muted">${i + 1}</td>
@@ -1869,7 +1883,7 @@ export function vipInfluencerView(el) {
           <td><b>${esc(fText)}</b></td>
           <td>${authBadge}</td>
           <td>${p.isVerified ? `<span class="chip" style="color:#0284c7;border-color:rgba(2,132,199,0.3);background:rgba(2,132,199,0.08);padding:1px 6px;font-size:11px">🔵 Verified</span>` : '<span class="muted">—</span>'}</td>
-          <td><span class="chip">${esc(p.relationship || 'Following')}</span></td>
+          <td>${relBadge}</td>
           <td>${isWl ? `<span class="chip ok" style="padding:1px 6px;font-size:10px">⭐ Protected</span>` : '<span class="muted">No</span>'}</td>
           <td style="text-align:right">
             <button class="btn sm danger-ghost" data-unfollow="${esc(p.username)}" ${isWl ? 'disabled title="Protected by Whitelist"' : ''}>Unfollow</button>

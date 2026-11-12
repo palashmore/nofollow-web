@@ -40,9 +40,8 @@ export function classify(snap) {
   const followersCount = snap.followersCount ?? null;
   const followingCount = snap.followingCount ?? null;
   let authorityRatio = snap.authorityRatio ?? null;
-  if (authorityRatio === null && followersCount !== null) {
-    const denom = (followingCount && followingCount > 0) ? followingCount : 1;
-    authorityRatio = Math.round((followersCount / denom) * 10) / 10;
+  if (authorityRatio === null && followersCount !== null && followingCount !== null && followingCount > 0) {
+    authorityRatio = Math.round((followersCount / followingCount) * 10) / 10;
   }
 
   const info = {
@@ -173,11 +172,23 @@ export async function waitForState(page, { timeout = 15000, interval = 400 } = {
 export async function waitForScannerProfile(page, { timeout = 4000, interval = 200 } = {}) {
   const end = Date.now() + timeout;
   let last = { state: REL.LOADING, followersCount: null, isVerified: false, followersText: null };
+  let statsFoundAt = 0;
   while (Date.now() < end) {
     try {
       const snap = await takeSnapshot(page);
       last = classify(snap);
-      if (last.followersCount !== null || last.isVerified || (last.state !== REL.LOADING && last.state !== REL.AMBIGUOUS)) {
+      const hasStats = last.followersCount !== null || last.isVerified;
+      const hasDecisiveRel = last.state !== REL.LOADING && last.state !== REL.AMBIGUOUS;
+
+      if (hasStats && hasDecisiveRel) {
+        return last;
+      }
+      if (hasStats) {
+        if (!statsFoundAt) statsFoundAt = Date.now();
+        if (Date.now() - statsFoundAt >= 600) {
+          return last;
+        }
+      } else if (hasDecisiveRel) {
         return last;
       }
     } catch (e) {

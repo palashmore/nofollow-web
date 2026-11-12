@@ -58,6 +58,13 @@ test('ProfileMetadataService: set, get, query filters, and summary calculation',
   assert.equal(sum.totalScanned, 3);
   assert.equal(sum.verifiedCount, 1);
   assert.equal(sum.above10k, 2); // Big_Creator and celebrity
+
+  // Test hasScannedStats vs has
+  meta.set('live_sync_only_user', { fullName: 'Live Sync Person', profilePicUrl: 'https://example.com/pic.jpg' });
+  assert.equal(meta.has('live_sync_only_user'), true, 'has should return true when profile exists');
+  assert.equal(meta.hasScannedStats('live_sync_only_user'), false, 'hasScannedStats must return false when followersCount is null');
+  assert.equal(meta.hasScannedStats('regular_user'), true, 'hasScannedStats must return true when followersCount is set');
+  assert.equal(meta.get('live_sync_only_user').authorityRatio, null, 'authorityRatio must be null when followingCount is null');
   assert.equal(sum.above50k, 1); // celebrity
 
   // Query verified
@@ -242,6 +249,43 @@ test('Headless Background Queue: enqueues new usernames into running VIP scanner
   assert.ok(scanned.includes('user_1'));
   assert.ok(scanned.includes('user_2'));
   assert.equal(scanner.snapshot().active, false);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('VipScannerEngine: sanitizes LOADING inspect state and uses accountService relationship', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nf-rel-test-'));
+  const meta = new ProfileMetadataService(path.join(dir, 'meta.json'));
+  const wl = new WhitelistService(path.join(dir, 'wl.json'));
+  const logger = new Logger(dir);
+
+  const fakeIg = {
+    async inspectScanner(username) {
+      return { state: 'LOADING', isVerified: true, followersCount: 12000000, followingCount: null };
+    },
+    async closeScannerTab() {}
+  };
+
+  const fakeAccountService = {
+    relationship(username) {
+      return username === 'rvcj_test' ? 'Not following back' : 'Other';
+    }
+  };
+
+  const scanner = new VipScannerEngine({
+    ig: fakeIg,
+    profileMeta: meta,
+    whitelist: wl,
+    logger,
+    accountService: fakeAccountService
+  });
+
+  await scanner.scan(['rvcj_test'], { intervalSec: 0 });
+
+  const record = meta.get('rvcj_test');
+  assert.notEqual(record.relationship, 'LOADING', 'relationship must never be persisted as LOADING');
+  assert.equal(record.relationship, 'Not following back', 'relationship should be resolved via accountService');
+  assert.equal(record.authorityRatio, null, 'authorityRatio must be null when followingCount is null');
 
   fs.rmSync(dir, { recursive: true, force: true });
 });

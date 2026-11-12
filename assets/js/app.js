@@ -1,5 +1,5 @@
 import { api, post, isRemoteOrigin, getAgentUrl, setAgentUrl, getAgentToken, setAgentToken, pairWithAgent, disconnectAgent } from './api.js';
-import { $, esc, icon, fmtDate, fmtNum, setTheme, toast, confirmModal } from './ui.js';
+import { $, esc, icon, fmtDate, fmtNum, setTheme, toast, confirmModal, THEMES, themeGalleryModal, commandPaletteModal, getCurrentTheme } from './ui.js';
 import { store, hooks } from './state.js';
 import * as V from './views.js';
 
@@ -34,20 +34,51 @@ const ROUTES = [
 
 function renderShell() {
   const k = store.data?.kpis || {};
+  const currentThemeId = getCurrentTheme();
+  const themeObj = THEMES.find(t => t.id === currentThemeId) || THEMES[0];
+  const account = store.data?.browser?.session?.account || store.data?.profile?.username || 'Guest';
+
   $('#sidebar').innerHTML = `
     <div class="brand">
       <div class="brand-icon">${icon('shield', 18)}</div>
       <div class="brand-info">
-        <span class="brand-name">NoFollow Web</span>
-        <span class="brand-sub">Instagram Intelligence &amp; Automation</span>
+        <div class="brand-title-row">
+          <span class="brand-name">NoFollow Web</span>
+          <span class="brand-tag">2.0</span>
+        </div>
+        <span class="brand-sub">Social Intelligence</span>
       </div>
     </div>
-    <nav class="nav">${ROUTES.map(r => r.sep
+
+    <button class="sidebar-search-btn" id="btn-cmd-palette" title="Search commands & jump to screen (Ctrl+K)">
+      <span class="search-icon">${icon('search', 14)}</span>
+      <span class="search-text">Search or jump...</span>
+      <kbd class="search-kbd">Ctrl K</kbd>
+    </button>
+
+    <nav class="nav" aria-label="Main Navigation">${ROUTES.map(r => r.sep
       ? `<div class="sep">${r.sep}</div>`
-      : `<a href="#/${r.id}" data-id="${r.id}">${icon(r.icon, 16)} <span>${r.label}</span>${r.count && store.data?.summary ? `<span class="count">${fmtNum(r.count(k))}</span>` : ''}</a>`).join('')}</nav>`;
+      : `<a href="#/${r.id}" data-id="${r.id}" class="nav-item">${icon(r.icon, 16)} <span>${r.label}</span>${r.count && store.data?.summary ? `<span class="count">${fmtNum(r.count(k))}</span>` : ''}</a>`).join('')}</nav>
+
+    <div class="sidebar-footer">
+      <div class="user-pill">
+        <div class="avatar-dot" title="Active Session">IG</div>
+        <div class="user-meta">
+          <span class="user-name">@${esc(account)}</span>
+          <span class="user-status"><span class="dot ${store.data?.browser?.session?.state === 'AUTHENTICATED' ? 'ok' : 'warn'}"></span>${store.data?.browser?.session?.state === 'AUTHENTICATED' ? 'Verified' : 'Check login'}</span>
+        </div>
+      </div>
+      <button class="theme-switcher-pill" id="btn-sidebar-theme" title="Change Theme (8 Palettes)">
+        <span class="theme-color-dot" style="background:${themeObj.color}"></span>
+        <span class="theme-label">${esc(themeObj.name)}</span>
+        <span class="theme-icon">${icon('palette', 13)}</span>
+      </button>
+    </div>`;
+
   markActive();
   renderTopbar();
 }
+
 const markActive = () => document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.dataset.id === current()));
 const current = () => (location.hash.replace(/^#\//, '') || 'dashboard');
 
@@ -65,10 +96,12 @@ function renderTopbar() {
     <span class="chip" id="chip-ig" title="Instagram Session Status"><span class="dot ${ig[0]}"></span>${ig[1]}</span>
     <span class="chip" id="chip-engine" title="Automation Engine Status"><span class="dot ${en[0]}"></span>${esc(en[1])}</span>
     <span class="spacer"></span>
+    <a class="btn sm" href="#/import-data" id="btn-quick-sync" title="Sync live session directly from Instagram" style="color:var(--accent);font-weight:600">${icon('zap', 14)} Live Sync</a>
     ${b.session.state !== 'AUTHENTICATED' ? '<button class="btn sm primary" id="btn-verify-topbar" title="Verify Instagram Login">Verify Login</button>' : ''}
     <button class="btn sm" id="ig">${b.open ? 'Show Instagram' : 'Open Instagram'}</button>
     ${remote ? `<button class="btn sm ghost" id="btn-agent-status" title="Manage Local Agent Pairing">Agent Settings</button>` : ''}
-    <button class="btn sm ghost" id="theme" aria-label="Switch theme" title="Toggle Theme">${icon('sun', 16)}</button>
+    <button class="btn sm ghost" id="btn-open-themes" aria-label="Luxury Themes" title="Theme Gallery (8 Palettes)">${icon('palette', 16)}</button>
+    <button class="btn sm ghost" id="theme" aria-label="Switch theme" title="Toggle Dark/Light">${icon('sun', 16)}</button>
     <a class="btn sm ghost" href="#/settings" aria-label="Automation settings" title="Settings">${icon('gear', 16)}</a>`;
 }
 
@@ -79,7 +112,7 @@ function route() {
   // fresh element every render so views never stack duplicate event listeners
   const old = $('#view'); const el = old.cloneNode(false); old.replaceWith(el);
   store.view = r.render(el) || null;
-  document.title = `${r.label} · NoFollow Web`;
+  document.title = `${r.label} · NoFollow Web 2.0`;
 }
 
 async function refresh() {
@@ -136,8 +169,37 @@ function connect() {
   });
 }
 
+function handleGlobalAction(action) {
+  if (action === 'liveSync') {
+    location.hash = '#/import-data';
+  } else if (action === 'openBrowser') {
+    post('/api/browser/open').then(refresh).catch(err => toast(err.message, 'err'));
+  } else if (action === 'verifySession') {
+    post('/api/session/verify').then(r => {
+      toast(r.state === 'AUTHENTICATED' ? `Instagram verified${r.account ? ' (@' + r.account + ')' : ''}` : (r.reason || 'Login not verified'), r.state === 'AUTHENTICATED' ? 'ok' : 'warn');
+      refresh();
+    }).catch(err => toast(err.message, 'err'));
+  }
+}
+
 document.addEventListener('click', async e => {
-  if (e.target.closest('#theme')) { const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; setTheme(t); post('/api/settings', { theme: t }).catch(() => {}); }
+  if (e.target.closest('#btn-cmd-palette')) {
+    commandPaletteModal(ROUTES, rId => { location.hash = '#/' + rId; }, handleGlobalAction);
+  }
+  if (e.target.closest('#btn-open-themes') || e.target.closest('#btn-sidebar-theme')) {
+    themeGalleryModal(tid => {
+      post('/api/settings', { theme: tid }).catch(() => {});
+      renderShell();
+    });
+  }
+  if (e.target.closest('#theme')) {
+    const cur = document.documentElement.dataset.theme;
+    const isLight = cur === 'light' || cur === 'arctic-silver' || cur === 'champagne-luxe';
+    const next = isLight ? 'dark' : 'light';
+    setTheme(next);
+    post('/api/settings', { theme: next }).catch(() => {});
+    renderShell();
+  }
   if (e.target.closest('#menu')) $('#sidebar').classList.toggle('open');
   if (e.target.closest('#ig')) { try { await post('/api/browser/open'); await refresh(); } catch (err) { toast(err.message, 'err'); } }
   if (e.target.closest('#btn-verify-topbar')) {
@@ -181,11 +243,19 @@ document.addEventListener('click', async e => {
   }
 });
 
+// Global Keyboard Shortcut: Ctrl+K / Cmd+K to launch Command Palette
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    commandPaletteModal(ROUTES, rId => { location.hash = '#/' + rId; }, handleGlobalAction);
+  }
+});
+
 async function init() {
   try { setTheme(localStorage.getItem('nf-theme') || 'dark'); } catch { /* ignore */ }
   try {
     store.data = await api('/api/state');
-    setTheme(store.data.settings.theme);
+    if (store.data.settings?.theme) setTheme(store.data.settings.theme);
     store.logs = await api('/api/logs?n=100');
   } catch (e) {
     const isMixed = window.__nfMixedContentBlocked;

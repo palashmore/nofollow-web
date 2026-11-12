@@ -889,7 +889,18 @@ export function settingsView(el) {
       ${num('cooldownMinutes', 'Auto-cooldown duration (minutes)', 'Pause duration after reaching limit, 5 to 120', 5, 120)}</div>
       <h2 style="margin-top:20px">Application</h2><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
       <label class="field">Browser<select id="s-browserChannel"><option value="chrome">Google Chrome</option><option value="msedge">Microsoft Edge</option><option value="">Playwright Chromium</option></select><span>Applies after the app restarts</span></label>
-      <label class="field">Theme<select id="s-theme"><option value="dark">Dark</option><option value="light">Light</option></select></label></div>
+      <label class="field">Luxury Theme<select id="s-theme">
+        <option value="obsidian-violet">Obsidian Violet (Default Dark)</option>
+        <option value="emerald-executive">Emerald Executive (Forest &amp; Mint)</option>
+        <option value="midnight-ocean">Midnight Ocean (Navy &amp; Cyan)</option>
+        <option value="champagne-luxe">Champagne Luxe (Warm Ivory &amp; Gold)</option>
+        <option value="royal-sapphire">Royal Sapphire (Deep Navy &amp; Blue)</option>
+        <option value="rose-gold">Rose Gold (Charcoal &amp; Pink)</option>
+        <option value="arctic-silver">Arctic Silver (Refined Light)</option>
+        <option value="carbon-neon">Carbon Neon (Carbon &amp; Lime)</option>
+        <option value="dark">Dark (Obsidian)</option>
+        <option value="light">Light (Silver)</option>
+      </select></label></div>
       <p class="sub" id="rate" style="margin:16px 0 0"></p><div class="row" style="margin-top:16px"><button class="btn primary" id="save">Save settings</button></div>
       <p class="sub" style="margin:12px 0 0;font-size:12px">Pause, Resume and Stop are on the Dashboard. Resume re-verifies your Instagram login before anything continues.</p></div>`;
   $('#s-browserChannel', el).value = s.browserChannel; $('#s-theme', el).value = s.theme; $('#s-executionProfile', el).value = s.executionProfile;

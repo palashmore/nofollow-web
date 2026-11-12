@@ -9,6 +9,8 @@ const LABELS = {
 export const settingLabel = k => LABELS[k] || k;
 export const profileFor = n => Object.keys(PROFILES).find(k => PROFILES[k].intervalSec === n) || 'custom';
 
+export const VALID_THEMES = ['dark', 'light', 'obsidian-violet', 'emerald-executive', 'midnight-ocean', 'champagne-luxe', 'royal-sapphire', 'rose-gold', 'arctic-silver', 'carbon-neon'];
+
 /**
  * Validates a settings change. Invalid values are REJECTED with a message, never clamped,
  * so the app can never end up with a value the user did not choose.
@@ -28,7 +30,7 @@ export function validateSettings(patch = {}, current = DEFAULT_SETTINGS) {
     else if (n < lo || n > hi) errors.push(`${LABELS[k]} must be between ${lo} and ${hi}.`);
     else next[k] = n;
   }
-  if (patch.theme !== undefined) { if (['dark', 'light'].includes(patch.theme)) next.theme = patch.theme; else errors.push('Theme must be dark or light.'); }
+  if (patch.theme !== undefined) { if (VALID_THEMES.includes(patch.theme)) next.theme = patch.theme; else errors.push('Theme must be one of the recognized themes.'); }
   if (patch.browserChannel !== undefined) { if (['chrome', 'msedge', ''].includes(patch.browserChannel)) next.browserChannel = patch.browserChannel; else errors.push('Unknown browser.'); }
   if (errors.length) return { errors };
   next.executionProfile = profileFor(next.actionIntervalSec);

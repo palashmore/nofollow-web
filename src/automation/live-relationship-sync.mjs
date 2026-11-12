@@ -85,76 +85,91 @@ export class LiveRelationshipSyncEngine extends EventEmitter {
 
       // 2. Acquire dedicated scanner tab
       const page = await this.ig.tabs.scanner();
-      if (!page.url() || page.url() === 'about:blank') {
-        await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+      if (!page.url() || !page.url().includes('instagram.com')) {
+        await page.goto('https://www.instagram.com/', { waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await sleep(1500);
       }
 
-      // 3. Resolve user ID, expected counts, and session tokens
-      const initInfo = await page.evaluate(async (account) => {
+      // 3. Resolve user ID, expected counts, and session tokens with retry
+      let initInfo = null;
+      for (let initAttempt = 0; initAttempt < 3; initAttempt++) {
         try {
-          const cookieMatch = document.cookie.match(/ds_user_id=([0-9]+)/);
-          const cookieUserId = cookieMatch ? cookieMatch[1] : null;
-          const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
-          const csrfToken = csrfMatch ? csrfMatch[1] : '';
+          initInfo = await page.evaluate(async (account) => {
+            try {
+              const cookieMatch = document.cookie.match(/ds_user_id=([0-9]+)/);
+              const cookieUserId = cookieMatch ? cookieMatch[1] : null;
+              const csrfMatch = document.cookie.match(/csrftoken=([^;]+)/);
+              const csrfToken = csrfMatch ? csrfMatch[1] : '';
 
-          let dtsg = '';
-          try {
-            const scriptTags = Array.from(document.querySelectorAll('script')).map(s => s.textContent);
-            for (const s of scriptTags) {
-              const m = s.match(/"DTSGInitialData"[^}]*"token":"([^"]+)"/) || s.match(/\["DTSGInitialData",\[\],{"token":"([^"]+)"}/);
-              if (m) { dtsg = m[1]; break; }
-            }
-          } catch (_) {}
+              let dtsg = '';
+              try {
+                const scriptTags = Array.from(document.querySelectorAll('script')).map(s => s.textContent);
+                for (const s of scriptTags) {
+                  const m = s.match(/"DTSGInitialData"[^}]*"token":"([^"]+)"/) || s.match(/\["DTSGInitialData",\[\],{"token":"([^"]+)"}/);
+                  if (m) { dtsg = m[1]; break; }
+                }
+              } catch (_) {}
 
-          let targetAccount = account;
-          if (!targetAccount) {
-            const viewerLink = document.querySelector('nav a[href^="/"][role="link"], a[href^="/"][role="link"] img[alt*="profile"]');
-            const href = viewerLink?.closest('a')?.getAttribute('href');
-            if (href) targetAccount = href.replace(/\//g, '').split('?')[0];
-          }
+              let targetAccount = account;
+              if (!targetAccount) {
+                const viewerLink = document.querySelector('nav a[href^="/"][role="link"], a[href^="/"][role="link"] img[alt*="profile"]');
+                const href = viewerLink?.closest('a')?.getAttribute('href');
+                if (href) targetAccount = href.replace(/\//g, '').split('?')[0];
+              }
 
-          if (targetAccount) {
-            const res = await fetch(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(targetAccount)}`, {
-              headers: {
-                'X-IG-App-ID': '936619743392459',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRFToken': csrfToken
-              },
-              credentials: 'include'
-            });
-            if (res.ok) {
-              const data = await res.json();
-              const u = data?.data?.user;
-              if (u) {
+              if (targetAccount) {
+                const res = await fetch(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(targetAccount)}`, {
+                  headers: {
+                    'X-IG-App-ID': '936619743392459',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': csrfToken
+                  },
+                  credentials: 'include'
+                });
+                if (res.ok) {
+                  const data = await res.json();
+                  const u = data?.data?.user;
+                  if (u) {
+                    return {
+                      ok: true,
+                      userId: u.id || cookieUserId,
+                      username: u.username,
+                      followingCount: u.edge_follow?.count || 0,
+                      followersCount: u.edge_followed_by?.count || 0,
+                      dtsg,
+                      csrfToken
+                    };
+                  }
+                }
+              }
+
+              if (cookieUserId) {
                 return {
                   ok: true,
-                  userId: u.id || cookieUserId,
-                  username: u.username,
-                  followingCount: u.edge_follow?.count || 0,
-                  followersCount: u.edge_followed_by?.count || 0,
+                  userId: cookieUserId,
+                  username: account,
+                  followingCount: 0,
+                  followersCount: 0,
                   dtsg,
                   csrfToken
                 };
               }
+              return { ok: false, error: 'Could not determine user ID from active Instagram session.' };
+            } catch (e) {
+              return { ok: false, error: e.message };
             }
-          }
+          }, myAccount);
 
-          if (cookieUserId) {
-            return {
-              ok: true,
-              userId: cookieUserId,
-              username: account,
-              followingCount: 0,
-              followersCount: 0,
-              dtsg,
-              csrfToken
-            };
+          if (initInfo?.ok) break;
+        } catch (err) {
+          if (/context was destroyed|navigation/i.test(err.message)) {
+            await sleep(1500);
+            continue;
           }
-          return { ok: false, error: 'Could not determine user ID from active Instagram session.' };
-        } catch (e) {
-          return { ok: false, error: e.message };
+          throw err;
         }
-      }, myAccount);
+      }
 
       if (!initInfo || !initInfo.ok || !initInfo.userId) {
         throw new Error(initInfo?.error || 'Could not resolve logged-in Instagram account ID.');
@@ -184,7 +199,53 @@ export class LiveRelationshipSyncEngine extends EventEmitter {
           attempt++;
           batchRes = await page.evaluate(async ({ uid, cursor, dtsg, csrf }) => {
             try {
-              // Primary: REST API endpoint
+              // Primary: GraphQL connection (resilient against edge limits)
+              if (dtsg) {
+                const p = new URLSearchParams();
+                p.append('fb_dtsg', dtsg);
+                p.append('doc_id', '40819242737691319');
+                const vars = { isFollowerList: false, query: '', userID: uid };
+                if (cursor) vars.after = cursor;
+                p.append('variables', JSON.stringify(vars));
+
+                const gr = await fetch('/api/graphql', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-IG-App-ID': '936619743392459',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': csrf || ''
+                  },
+                  body: p.toString(),
+                  credentials: 'include'
+                });
+
+                if (gr.ok) {
+                  const gj = await gr.json();
+                  const conn = gj.data?.xdt_api__v1__friendships__following__connection ||
+                               gj.data?.xdt_api__v1__friendships__followers__connection ||
+                               Object.values(gj.data || {})[0];
+                  if (conn && Array.isArray(conn.edges)) {
+                    const users = (conn.edges || []).map(e => ({
+                      username: e.node?.username,
+                      full_name: e.node?.full_name,
+                      pk: e.node?.pk || e.node?.id,
+                      is_verified: !!e.node?.is_verified,
+                      profile_pic_url: e.node?.profile_pic_url,
+                      isOutgoingRequest: !!e.node?.friendship_status?.outgoing_request
+                    }));
+                    return {
+                      ok: true,
+                      source: 'GRAPHQL',
+                      users,
+                      nextCursor: conn.page_info?.has_next_page ? conn.page_info?.end_cursor : null,
+                      hasMore: !!conn.page_info?.has_next_page
+                    };
+                  }
+                }
+              }
+
+              // Fallback: REST API endpoint
               const restUrl = `https://www.instagram.com/api/v1/friendships/${uid}/following/?count=50${cursor ? `&max_id=${encodeURIComponent(cursor)}` : ''}`;
               const r = await fetch(restUrl, {
                 headers: {
@@ -215,51 +276,7 @@ export class LiveRelationshipSyncEngine extends EventEmitter {
                 };
               }
 
-              // Fallback: GraphQL connection if REST is throttled or non-JSON
-              if (dtsg) {
-                const p = new URLSearchParams();
-                p.append('fb_dtsg', dtsg);
-                p.append('doc_id', '40819242737691319');
-                const vars = { isFollowerList: false, query: '', userID: uid };
-                if (cursor) vars.after = cursor;
-                p.append('variables', JSON.stringify(vars));
-
-                const gr = await fetch('/api/graphql', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'X-IG-App-ID': '936619743392459',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRFToken': csrf || ''
-                  },
-                  body: p.toString(),
-                  credentials: 'include'
-                });
-
-                if (gr.ok) {
-                  const gj = await gr.json();
-                  const conn = gj.data?.xdt_api__v1__friendships__following__connection;
-                  if (conn) {
-                    const users = (conn.edges || []).map(e => ({
-                      username: e.node?.username,
-                      full_name: e.node?.full_name,
-                      pk: e.node?.pk || e.node?.id,
-                      is_verified: !!e.node?.is_verified,
-                      profile_pic_url: e.node?.profile_pic_url,
-                      isOutgoingRequest: !!e.node?.friendship_status?.outgoing_request
-                    }));
-                    return {
-                      ok: true,
-                      source: 'GRAPHQL',
-                      users,
-                      nextCursor: conn.page_info?.has_next_page ? conn.page_info?.end_cursor : null,
-                      hasMore: !!conn.page_info?.has_next_page
-                    };
-                  }
-                }
-              }
-
-              return { ok: false, status: r.status, ct };
+              return { ok: false, status: r?.status || 500, ct };
             } catch (e) {
               return { ok: false, error: e.message };
             }

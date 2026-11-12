@@ -49,7 +49,15 @@ export class BrowserSessionManager {
   }
 
   #lockHolder() {
-    try { const pid = Number(fs.readFileSync(this.lockFile, 'utf8')); return pid && pid !== process.pid && isAlive(pid) ? pid : null; } catch { return null; }
+    try {
+      const pid = Number(fs.readFileSync(this.lockFile, 'utf8'));
+      if (!pid || pid === process.pid) return null;
+      if (!isAlive(pid)) {
+        try { fs.unlinkSync(this.lockFile); } catch {}
+        return null;
+      }
+      return pid;
+    } catch { return null; }
   }
 
   async #launch() {

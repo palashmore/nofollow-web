@@ -1,9 +1,24 @@
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import { ensureDir, readJson } from './file-manager.mjs';
 
 export const isAlive = pid => {
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+  try {
+    process.kill(pid, 0);
+    if (process.platform === 'win32') {
+      try {
+        const out = execFileSync('tasklist.exe', ['/fi', `PID eq ${pid}`, '/fo', 'csv', '/nh'], { encoding: 'utf8', timeout: 1500, windowsHide: true });
+        if (!out || out.includes('No tasks')) return false;
+        return /node\.exe/i.test(out);
+      } catch {
+        return true;
+      }
+    }
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
 };
 
 /**

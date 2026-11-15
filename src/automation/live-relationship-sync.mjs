@@ -199,7 +199,38 @@ export class LiveRelationshipSyncEngine extends EventEmitter {
           attempt++;
           batchRes = await page.evaluate(async ({ uid, cursor, dtsg, csrf }) => {
             try {
-              // Primary: GraphQL connection (resilient against edge limits)
+              // Primary: High-speed REST API (returns up to 100 per page, fully paginates to end)
+              const restUrl = `https://www.instagram.com/api/v1/friendships/${uid}/following/?count=100${cursor ? `&max_id=${encodeURIComponent(cursor)}` : ''}`;
+              const r = await fetch(restUrl, {
+                headers: {
+                  'X-IG-App-ID': '936619743392459',
+                  'X-Requested-With': 'XMLHttpRequest',
+                  'X-CSRFToken': csrf || ''
+                },
+                credentials: 'include'
+              });
+
+              const ct = r.headers.get('content-type') || '';
+              if (r.ok && ct.includes('json')) {
+                const json = await r.json();
+                const users = (json.users || []).map(u => ({
+                  username: u.username,
+                  full_name: u.full_name,
+                  pk: u.pk,
+                  is_verified: !!u.is_verified,
+                  profile_pic_url: u.profile_pic_url,
+                  isOutgoingRequest: false
+                }));
+                return {
+                  ok: true,
+                  source: 'REST',
+                  users,
+                  nextCursor: json.next_max_id || null,
+                  hasMore: json.big_list === true || !!json.next_max_id
+                };
+              }
+
+              // Fallback: GraphQL connection (resilient against edge limits)
               if (dtsg) {
                 const p = new URLSearchParams();
                 p.append('fb_dtsg', dtsg);
@@ -243,37 +274,6 @@ export class LiveRelationshipSyncEngine extends EventEmitter {
                     };
                   }
                 }
-              }
-
-              // Fallback: REST API endpoint
-              const restUrl = `https://www.instagram.com/api/v1/friendships/${uid}/following/?count=50${cursor ? `&max_id=${encodeURIComponent(cursor)}` : ''}`;
-              const r = await fetch(restUrl, {
-                headers: {
-                  'X-IG-App-ID': '936619743392459',
-                  'X-Requested-With': 'XMLHttpRequest',
-                  'X-CSRFToken': csrf || ''
-                },
-                credentials: 'include'
-              });
-
-              const ct = r.headers.get('content-type') || '';
-              if (r.ok && ct.includes('json')) {
-                const json = await r.json();
-                const users = (json.users || []).map(u => ({
-                  username: u.username,
-                  full_name: u.full_name,
-                  pk: u.pk,
-                  is_verified: !!u.is_verified,
-                  profile_pic_url: u.profile_pic_url,
-                  isOutgoingRequest: false
-                }));
-                return {
-                  ok: true,
-                  source: 'REST',
-                  users,
-                  nextCursor: json.next_max_id || null,
-                  hasMore: json.big_list === true || !!json.next_max_id
-                };
               }
 
               return { ok: false, status: r?.status || 500, ct };
@@ -344,7 +344,38 @@ export class LiveRelationshipSyncEngine extends EventEmitter {
             attempt++;
             batchRes = await page.evaluate(async ({ uid, cursor, dtsg, csrf }) => {
               try {
-                // Primary: GraphQL connection (resilient against edge rate-limits)
+                // Primary: High-speed REST API (returns up to 100 per page, 5x faster)
+                const restUrl = `https://www.instagram.com/api/v1/friendships/${uid}/followers/?count=100${cursor ? `&max_id=${encodeURIComponent(cursor)}` : ''}`;
+                const r = await fetch(restUrl, {
+                  headers: {
+                    'X-IG-App-ID': '936619743392459',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': csrf || ''
+                  },
+                  credentials: 'include'
+                });
+
+                const ct = r.headers.get('content-type') || '';
+                if (r.ok && ct.includes('json')) {
+                  const json = await r.json();
+                  const users = (json.users || []).map(u => ({
+                    username: u.username,
+                    full_name: u.full_name,
+                    pk: u.pk,
+                    is_verified: !!u.is_verified,
+                    profile_pic_url: u.profile_pic_url,
+                    isOutgoingRequest: false
+                  }));
+                  return {
+                    ok: true,
+                    source: 'REST',
+                    users,
+                    nextCursor: json.next_max_id || null,
+                    hasMore: json.big_list === true || !!json.next_max_id
+                  };
+                }
+
+                // Fallback: GraphQL connection (resilient against edge rate-limits)
                 if (dtsg) {
                   const p = new URLSearchParams();
                   p.append('fb_dtsg', dtsg);
@@ -386,37 +417,6 @@ export class LiveRelationshipSyncEngine extends EventEmitter {
                       };
                     }
                   }
-                }
-
-                // Fallback: REST API endpoint
-                const restUrl = `https://www.instagram.com/api/v1/friendships/${uid}/followers/?count=50${cursor ? `&max_id=${encodeURIComponent(cursor)}` : ''}`;
-                const r = await fetch(restUrl, {
-                  headers: {
-                    'X-IG-App-ID': '936619743392459',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRFToken': csrf || ''
-                  },
-                  credentials: 'include'
-                });
-
-                const ct = r.headers.get('content-type') || '';
-                if (r.ok && ct.includes('json')) {
-                  const json = await r.json();
-                  const users = (json.users || []).map(u => ({
-                    username: u.username,
-                    full_name: u.full_name,
-                    pk: u.pk,
-                    is_verified: !!u.is_verified,
-                    profile_pic_url: u.profile_pic_url,
-                    isOutgoingRequest: false
-                  }));
-                  return {
-                    ok: true,
-                    source: 'REST',
-                    users,
-                    nextCursor: json.next_max_id || null,
-                    hasMore: json.big_list === true || !!json.next_max_id
-                  };
                 }
 
                 return { ok: false, status: r.status, ct };

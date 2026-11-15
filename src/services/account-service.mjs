@@ -149,8 +149,19 @@ export class AccountService {
       this.#recordDiff(diff);
     }
 
-    // Auto-update profile metadata with verified badges and names
-    if (this.profileMeta && userMeta) {
+    // Auto-update profile metadata with verified badges and names in one batch write
+    if (this.profileMeta && userMeta && typeof this.profileMeta.setBatch === 'function') {
+      const batch = {};
+      for (const [u, meta] of Object.entries(userMeta)) {
+        const existing = this.profileMeta.get(u) || {};
+        batch[u] = {
+          isVerified: meta.isVerified ?? existing.isVerified ?? false,
+          fullName: meta.fullName || existing.fullName || mergedDisplayNames[u] || '',
+          profilePicUrl: meta.profilePicUrl || existing.profilePicUrl || null
+        };
+      }
+      this.profileMeta.setBatch(batch);
+    } else if (this.profileMeta && userMeta) {
       for (const [u, meta] of Object.entries(userMeta)) {
         const existing = this.profileMeta.get(u) || {};
         this.profileMeta.set(u, {

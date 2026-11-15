@@ -79,6 +79,47 @@ export class ProfileMetadataService {
     return this.state.profiles[u];
   }
 
+  setBatch(entries = {}) {
+    if (!entries || typeof entries !== 'object') return;
+    let modified = false;
+    const now = new Date().toISOString();
+    for (const [username, data] of Object.entries(entries)) {
+      const u = normalizeUsername(username);
+      if (!u) continue;
+      const prev = this.state.profiles[u] || {};
+      const fCount = data.followersCount !== null && data.followersCount !== undefined ? data.followersCount : (prev.followersCount ?? null);
+      const gCount = data.followingCount !== null && data.followingCount !== undefined ? data.followingCount : (prev.followingCount ?? null);
+      const fName = data.fullName !== null && data.fullName !== undefined ? data.fullName : (prev.fullName ?? null);
+      const pic = data.profilePicUrl !== null && data.profilePicUrl !== undefined ? data.profilePicUrl : (prev.profilePicUrl ?? null);
+      let ratio = data.authorityRatio !== null && data.authorityRatio !== undefined ? data.authorityRatio : (prev.authorityRatio ?? null);
+      if (ratio === null && fCount !== null && gCount !== null && gCount > 0) {
+        ratio = Math.round((fCount / gCount) * 10) / 10;
+      }
+      const cleanRel = (data.relationship && data.relationship !== 'LOADING' && data.relationship !== 'AMBIGUOUS')
+        ? (data.relationship === 'FOLLOWING' ? 'Following' : data.relationship === 'NOT_FOLLOWING' ? 'Not following' : data.relationship === 'REQUESTED' ? 'Request pending' : data.relationship)
+        : (prev.relationship && prev.relationship !== 'LOADING' && prev.relationship !== 'AMBIGUOUS' ? prev.relationship : null);
+
+      this.state.profiles[u] = {
+        username: u,
+        fullName: fName,
+        profilePicUrl: pic,
+        followersCount: fCount,
+        followersText: data.followersText || prev.followersText || (fCount ? String(fCount) : null),
+        followingCount: gCount,
+        followingText: data.followingText || prev.followingText || (gCount ? String(gCount) : null),
+        authorityRatio: ratio,
+        isVerified: typeof data.isVerified === 'boolean' ? data.isVerified : (prev.isVerified ?? false),
+        relationship: cleanRel,
+        scannedAt: now
+      };
+      modified = true;
+    }
+    if (modified) {
+      this.state.updatedAt = now;
+      this.save();
+    }
+  }
+
   all() {
     return Object.values(this.state.profiles);
   }
